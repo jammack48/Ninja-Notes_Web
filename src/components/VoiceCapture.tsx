@@ -147,16 +147,22 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         }
         console.log('Task saved successfully:', data);
 
-        // Create the task object with the returned data
-        const newTask: Task = {
-          id: data.id,
-          title: data.title,
-          description: data.description,
-          priority: data.priority,
-          dueDate: data.due_date,
-          completed: data.completed,
-          createdAt: data.created_at
-        };
+        // after your supabase insert/select…
+      const rawPriority = data.priority;
+      if (!['low','medium','high'].includes(rawPriority)) {
+        throw new Error(`Unexpected priority value "${rawPriority}" from database`);
+      }
+      
+      const newTask: Task = {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        priority: rawPriority as Task['priority'],
+        dueDate: data.due_date,
+        completed: data.completed,
+        createdAt: data.created_at
+      };
+
         onTaskCreated(newTask);
       }
       toast({
