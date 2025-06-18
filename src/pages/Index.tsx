@@ -67,13 +67,15 @@ const Index = () => {
 
     // Only handle horizontal swipes
     if (!isVerticalSwipe) {
-      if (isLeftSwipe && currentScreen === 'mic') {
-        console.log('Swiping left to tasks');
-        setCurrentScreen('tasks');
+      if (isLeftSwipe) {
+        // Swipe left: mic -> tasks, tasks -> mic (cycles)
+        console.log('Swiping left');
+        setCurrentScreen(prev => prev === 'mic' ? 'tasks' : 'mic');
       }
-      if (isRightSwipe && currentScreen === 'tasks') {
-        console.log('Swiping right to mic');
-        setCurrentScreen('mic');
+      if (isRightSwipe) {
+        // Swipe right: tasks -> mic, mic -> tasks (cycles)
+        console.log('Swiping right');
+        setCurrentScreen(prev => prev === 'tasks' ? 'mic' : 'tasks');
       }
     }
   };
@@ -96,6 +98,21 @@ const Index = () => {
       {/* Futuristic background elements */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan-900/20 via-transparent to-transparent"></div>
       <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.05%22%3E%3Ccircle%20cx%3D%2230%22%20cy%3D%2230%22%20r%3D%221%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')]"></div>
+      
+      {/* Vertical tab indicators on the edges */}
+      <div className="absolute left-0 top-1/2 -translate-y-1/2 z-20 md:hidden">
+        <div className="bg-slate-800/60 backdrop-blur-sm border border-cyan-500/30 rounded-r-lg px-2 py-8 flex flex-col items-center gap-2">
+          <div className={`w-1 h-8 rounded-full transition-all duration-300 ${currentScreen === 'tasks' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+          <div className={`w-1 h-8 rounded-full transition-all duration-300 ${currentScreen === 'mic' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+        </div>
+      </div>
+      
+      <div className="absolute right-0 top-1/2 -translate-y-1/2 z-20 md:hidden">
+        <div className="bg-slate-800/60 backdrop-blur-sm border border-cyan-500/30 rounded-l-lg px-2 py-8 flex flex-col items-center gap-2">
+          <div className={`w-1 h-8 rounded-full transition-all duration-300 ${currentScreen === 'tasks' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+          <div className={`w-1 h-8 rounded-full transition-all duration-300 ${currentScreen === 'mic' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+        </div>
+      </div>
       
       {/* Unified Tab Interface for both Mobile and Desktop */}
       <Tabs value={currentScreen} onValueChange={(value) => setCurrentScreen(value as 'mic' | 'tasks')} className="h-screen">
@@ -139,7 +156,7 @@ const Index = () => {
             onDeleteTask={deleteTask}
             onSwitchToMic={() => setCurrentScreen('mic')}
           />
-        </TabsContent>
+        </TaskList>
       </Tabs>
     </div>
   );
