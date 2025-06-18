@@ -136,6 +136,13 @@ serve(async (req) => {
     // STAGE 2: CHATGPT CLEANUP & ANALYSIS
     console.log('🎯 STAGE 2: Starting ChatGPT cleanup and analysis...');
     
+    // Initialize analysisResult with fallback values
+    let analysisResult = {
+      cleanedText: rawTranscription,
+      extractedTasks: [],
+      improvements: "No improvements applied"
+    };
+    
     const chatgptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -185,28 +192,19 @@ Response format:
     if (!chatgptResponse.ok) {
       const errorText = await chatgptResponse.text();
       console.error('❌ ChatGPT API error response:', errorText);
-      // Fallback to raw transcription if ChatGPT fails
+      // Fallback already set above
       console.log('⚠️ Falling back to raw Whisper transcription');
-      const fallbackResult = {
-        cleanedText: rawTranscription,
-        extractedTasks: [],
-        improvements: "ChatGPT processing failed, using raw transcription"
-      };
       timer.markStage('fallback_applied');
     } else {
       const chatgptResult = await chatgptResponse.json();
-      let analysisResult;
       
       try {
-        analysisResult = JSON.parse(chatgptResult.choices[0].message.content);
+        const parsedResult = JSON.parse(chatgptResult.choices[0].message.content);
+        analysisResult = parsedResult;
         console.log('✅ ChatGPT analysis successful:', analysisResult);
       } catch (parseError) {
         console.error('❌ Failed to parse ChatGPT response, using fallback');
-        analysisResult = {
-          cleanedText: rawTranscription,
-          extractedTasks: [],
-          improvements: "Failed to parse AI analysis, using raw transcription"
-        };
+        // analysisResult already has fallback values
       }
       timer.markStage('analysis_parsed');
     }
@@ -227,7 +225,7 @@ Response format:
     const { data, error } = await supabase
       .from('transcriptions')
       .insert([{
-        text: analysisResult?.cleanedText || rawTranscription,
+        text: analysisResult.cleanedText,
         audio_length: binaryAudio.length,
         created_at: new Date().toISOString()
       }])
@@ -255,9 +253,9 @@ Response format:
     return new Response(
       JSON.stringify({ 
         rawTranscription,
-        cleanedText: analysisResult?.cleanedText || rawTranscription,
-        extractedTasks: analysisResult?.extractedTasks || [],
-        improvements: analysisResult?.improvements || "No improvements applied",
+        cleanedText: analysisResult.cleanedText,
+        extractedTasks: analysisResult.extractedTasks,
+        improvements: analysisResult.improvements,
         id: data?.id || null,
         success: true,
         timings,
