@@ -142,6 +142,12 @@ serve(async (req) => {
       extractedTasks: [],
       improvements: "No improvements applied"
     };
+
+    // Initialize cost tracking
+    let totalTokens = 0;
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let estimatedCost = 0;
     
     const chatgptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -198,6 +204,21 @@ Response format:
     } else {
       const chatgptResult = await chatgptResponse.json();
       
+      // Extract token usage and calculate cost
+      if (chatgptResult.usage) {
+        totalTokens = chatgptResult.usage.total_tokens;
+        promptTokens = chatgptResult.usage.prompt_tokens;
+        completionTokens = chatgptResult.usage.completion_tokens;
+        
+        // GPT-4 pricing (as of 2024): $0.03 per 1K prompt tokens, $0.06 per 1K completion tokens
+        const promptCost = (promptTokens / 1000) * 0.03;
+        const completionCost = (completionTokens / 1000) * 0.06;
+        estimatedCost = promptCost + completionCost;
+        
+        console.log(`💰 Token usage - Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
+        console.log(`💰 Estimated cost: $${estimatedCost.toFixed(4)} (Prompt: $${promptCost.toFixed(4)}, Completion: $${completionCost.toFixed(4)})`);
+      }
+      
       try {
         const parsedResult = JSON.parse(chatgptResult.choices[0].message.content);
         analysisResult = parsedResult;
@@ -249,6 +270,7 @@ Response format:
     console.log(`   Whisper Time: ${whisperTime}ms`);
     console.log(`   ChatGPT Time: ${chatgptTime}ms`);
     console.log(`   Database Time: ${dbTime}ms`);
+    console.log(`💰 Cost Summary: $${estimatedCost.toFixed(4)} (${totalTokens} tokens)`);
 
     return new Response(
       JSON.stringify({ 
@@ -264,6 +286,12 @@ Response format:
           chatgptTime: `${chatgptTime}ms`,
           databaseTime: `${dbTime}ms`,
           totalTime: `${totalTime}ms`
+        },
+        tokenUsage: {
+          totalTokens,
+          promptTokens,
+          completionTokens,
+          estimatedCost: `$${estimatedCost.toFixed(4)}`
         }
       }),
       { 

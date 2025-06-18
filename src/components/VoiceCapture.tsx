@@ -21,6 +21,13 @@ interface ProcessingTimings {
   totalTime?: string;
 }
 
+interface TokenUsage {
+  totalTokens?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  estimatedCost?: string;
+}
+
 interface TranscriptionResult {
   rawTranscription?: string;
   cleanedText?: string;
@@ -32,6 +39,7 @@ interface TranscriptionResult {
   improvements?: string;
   timings?: any;
   processingStages?: ProcessingTimings;
+  tokenUsage?: TokenUsage;
 }
 
 export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
@@ -49,6 +57,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const [debugMode, setDebugMode] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState<ProcessingTimings>({});
+  const [tokenMetrics, setTokenMetrics] = useState<TokenUsage>({});
   const { toast } = useToast();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -309,6 +318,12 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               addDebugLog(`Performance metrics: ${JSON.stringify(data.processingStages)}`);
             }
             
+            // Store token usage metrics
+            if (data.tokenUsage) {
+              setTokenMetrics(data.tokenUsage);
+              addDebugLog(`Token usage: ${JSON.stringify(data.tokenUsage)}`);
+            }
+            
             // Store the complete result
             setTranscriptionResult({
               rawTranscription: data.rawTranscription,
@@ -316,7 +331,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               extractedTasks: data.extractedTasks || [],
               improvements: data.improvements,
               timings: data.timings,
-              processingStages: data.processingStages
+              processingStages: data.processingStages,
+              tokenUsage: data.tokenUsage
             });
 
             setProcessingProgress(100);
@@ -327,7 +343,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             
             toast({
               title: "AI Processing Complete",
-              description: `Speech analyzed and cleaned up in ${data.processingStages?.totalTime || 'unknown time'}`
+              description: `Speech analyzed and cleaned up in ${data.processingStages?.totalTime || 'unknown time'}. Cost: ${data.tokenUsage?.estimatedCost || 'N/A'}`
             });
           } else {
             addDebugLog(`No data in response: ${JSON.stringify(data)}`);
@@ -505,6 +521,13 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               <span>Total: {performanceMetrics.totalTime}</span>
             </div>
           )}
+          {/* Token usage metrics display */}
+          {tokenMetrics.totalTokens && (
+            <div className="flex items-center gap-3 mt-1 text-xs text-emerald-400">
+              <span>💰 {tokenMetrics.totalTokens} tokens</span>
+              <span>{tokenMetrics.estimatedCost}</span>
+            </div>
+          )}
         </div>
         
         {/* Debug toggle */}
@@ -544,6 +567,17 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               ))
             )}
           </div>
+          {/* Token usage in debug panel */}
+          {tokenMetrics.totalTokens && (
+            <div className="mt-3 pt-2 border-t border-slate-600 text-xs text-emerald-400">
+              <div className="grid grid-cols-2 gap-2">
+                <span>Prompt: {tokenMetrics.promptTokens}</span>
+                <span>Completion: {tokenMetrics.completionTokens}</span>
+                <span>Total: {tokenMetrics.totalTokens}</span>
+                <span>Cost: {tokenMetrics.estimatedCost}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -681,6 +715,11 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                         {transcriptionResult.processingStages.totalTime}
                       </Badge>
                     )}
+                    {transcriptionResult.tokenUsage?.estimatedCost && (
+                      <Badge variant="outline" className="text-xs text-emerald-400">
+                        {transcriptionResult.tokenUsage.estimatedCost}
+                      </Badge>
+                    )}
                   </h3>
                   
                   {/* Before/After Comparison */}
@@ -734,7 +773,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                     </div>
                   )}
 
-                  {/* Improvements & Performance */}
+                  {/* Improvements, Performance & Token Usage */}
                   <div className="space-y-2">
                     {transcriptionResult.improvements && (
                       <p className="text-xs text-purple-300 bg-purple-900/20 p-2 rounded border border-purple-500/30">
@@ -743,13 +782,20 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                       </p>
                     )}
                     
-                    {transcriptionResult.processingStages && (
-                      <div className="flex gap-4 text-xs text-slate-400">
-                        <span>Whisper: {transcriptionResult.processingStages.whisperTime}</span>
-                        <span>ChatGPT: {transcriptionResult.processingStages.chatgptTime}</span>
-                        <span>DB: {transcriptionResult.processingStages.databaseTime}</span>
-                      </div>
-                    )}
+                    <div className="flex gap-4 text-xs text-slate-400">
+                      {transcriptionResult.processingStages && (
+                        <>
+                          <span>Whisper: {transcriptionResult.processingStages.whisperTime}</span>
+                          <span>ChatGPT: {transcriptionResult.processingStages.chatgptTime}</span>
+                          <span>DB: {transcriptionResult.processingStages.databaseTime}</span>
+                        </>
+                      )}
+                      {transcriptionResult.tokenUsage?.totalTokens && (
+                        <span className="text-emerald-400">
+                          {transcriptionResult.tokenUsage.totalTokens} tokens ({transcriptionResult.tokenUsage.estimatedCost})
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
