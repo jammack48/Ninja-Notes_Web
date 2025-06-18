@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Lock, Backspace } from 'lucide-react';
+import { Lock, Delete } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
@@ -126,7 +126,7 @@ export const LockScreen: React.FC<LockScreenProps> = ({ onUnlock }) => {
                         disabled={pin.length === 0}
                         className="h-14 bg-slate-700/50 border-slate-600 hover:bg-slate-600/50 text-white"
                       >
-                        <Backspace className="w-5 h-5" />
+                        <Delete className="w-5 h-5" />
                       </Button>
                     );
                   }
