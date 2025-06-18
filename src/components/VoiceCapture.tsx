@@ -1,9 +1,9 @@
-
 import React, { useState, useRef } from 'react';
-import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check, Bug } from 'lucide-react';
+import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check, Bug, Clock, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Task } from '@/types/Task';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
@@ -14,6 +14,26 @@ interface VoiceCaptureProps {
   taskCount: number;
 }
 
+interface ProcessingTimings {
+  whisperTime?: string;
+  chatgptTime?: string;
+  databaseTime?: string;
+  totalTime?: string;
+}
+
+interface TranscriptionResult {
+  rawTranscription?: string;
+  cleanedText?: string;
+  extractedTasks?: Array<{
+    title: string;
+    description: string;
+    priority: 'low' | 'medium' | 'high';
+  }>;
+  improvements?: string;
+  timings?: any;
+  processingStages?: ProcessingTimings;
+}
+
 export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   onTaskCreated,
   onSwitchToTasks,
@@ -22,13 +42,17 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStage, setProcessingStage] = useState('');
+  const [processingProgress, setProcessingProgress] = useState(0);
   const [showTranscriptPopup, setShowTranscriptPopup] = useState(false);
-  const [pendingTranscript, setPendingTranscript] = useState('');
+  const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult>({});
   const [debugMode, setDebugMode] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [performanceMetrics, setPerformanceMetrics] = useState<ProcessingTimings>({});
   const { toast } = useToast();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const processingStartTime = useRef<number>(0);
 
   const addDebugLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -38,7 +62,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   };
 
   const getMimeType = () => {
-    // Check supported MIME types in order of preference
     const types = [
       'audio/webm;codecs=opus',
       'audio/webm',
@@ -62,7 +85,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const startRecording = async () => {
     addDebugLog('Starting recording...');
     try {
-      // Check if MediaRecorder is supported
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('MediaRecorder not supported on this device');
       }
@@ -99,7 +121,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         addDebugLog(`Audio blob created: ${audioBlob.size} bytes, type: ${audioBlob.type}`);
         await processAudio(audioBlob);
 
-        // Stop all tracks
         stream.getTracks().forEach(track => {
           track.stop();
           addDebugLog(`Stopped track: ${track.kind}`);
@@ -110,7 +131,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         addDebugLog(`MediaRecorder error: ${event}`);
       };
 
-      mediaRecorder.start(1000); // Collect data every 1 second
+      mediaRecorder.start(1000);
       setIsRecording(true);
       setTranscript('');
       
@@ -147,7 +168,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       
       toast({
         title: "Processing Recording",
-        description: "Converting speech to text using OpenAI Whisper..."
+        description: "Converting speech to text and analyzing with AI..."
       });
     }
   };
@@ -155,19 +176,20 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const testEdgeFunction = async () => {
     addDebugLog('Testing edge function with simulated audio...');
     setIsProcessing(true);
+    setProcessingStage('Preparing test audio...');
+    setProcessingProgress(10);
     
     try {
       // Create a minimal valid WAV file (1 second of silence)
       const sampleRate = 44100;
       const numChannels = 1;
       const bitsPerSample = 16;
-      const duration = 1; // 1 second
+      const duration = 1;
       
       const numSamples = sampleRate * duration;
       const arrayBuffer = new ArrayBuffer(44 + numSamples * 2);
       const view = new DataView(arrayBuffer);
       
-      // WAV header
       const writeString = (offset: number, string: string) => {
         for (let i = 0; i < string.length; i++) {
           view.setUint8(offset + i, string.charCodeAt(i));
@@ -188,14 +210,14 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       writeString(36, 'data');
       view.setUint32(40, numSamples * 2, true);
       
-      // Generate a simple tone instead of silence for better recognition
       for (let i = 0; i < numSamples; i++) {
-        const sample = Math.sin(2 * Math.PI * 440 * i / sampleRate) * 0.1; // 440Hz tone at low volume
+        const sample = Math.sin(2 * Math.PI * 440 * i / sampleRate) * 0.1;
         view.setInt16(44 + i * 2, sample * 32767, true);
       }
       
       const audioBlob = new Blob([arrayBuffer], { type: 'audio/wav' });
       addDebugLog(`Test audio blob created: ${audioBlob.size} bytes`);
+      setProcessingProgress(30);
       
       await processAudio(audioBlob);
     } catch (error: any) {
@@ -207,26 +229,46 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       });
     } finally {
       setIsProcessing(false);
+      setProcessingStage('');
+      setProcessingProgress(0);
     }
   };
 
   const simulateVoiceInput = () => {
     addDebugLog('Simulating voice input...');
     const demoMessage = "Call Ryan tomorrow and buy paint for bedroom";
-    setPendingTranscript(demoMessage);
+    setTranscriptionResult({
+      rawTranscription: demoMessage,
+      cleanedText: "Call Ryan tomorrow and buy paint for the bedroom.",
+      extractedTasks: [
+        {
+          title: "Call Ryan",
+          description: "Schedule a call with Ryan for tomorrow",
+          priority: "medium"
+        },
+        {
+          title: "Buy paint for bedroom",
+          description: "Purchase paint for bedroom decoration",
+          priority: "low"
+        }
+      ],
+      improvements: "Improved grammar and clarity, extracted actionable tasks"
+    });
     setShowTranscriptPopup(true);
     toast({
       title: "Demo Message Simulated",
-      description: "Voice input simulated for prototyping purposes"
+      description: "Voice input simulated with AI analysis"
     });
   };
 
   const processAudio = async (audioBlob: Blob) => {
     setIsProcessing(true);
+    processingStartTime.current = Date.now();
+    setProcessingStage('Converting audio to base64...');
+    setProcessingProgress(0);
     addDebugLog(`Processing audio blob of size: ${audioBlob.size}, type: ${audioBlob.type}`);
     
     try {
-      // Convert audio blob to base64
       const reader = new FileReader();
       reader.readAsDataURL(audioBlob);
       
@@ -234,15 +276,19 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         try {
           const base64Audio = (reader.result as string).split(',')[1];
           addDebugLog(`Base64 audio length: ${base64Audio.length}`);
+          setProcessingProgress(20);
 
+          setProcessingStage('Stage 1: Whisper transcription...');
           addDebugLog('Calling voice-to-text edge function...');
           
-          // Call the voice-to-text edge function
           const { data, error } = await supabase.functions.invoke('voice-to-text', {
             body: {
               audio: base64Audio
             }
           });
+
+          setProcessingProgress(60);
+          setProcessingStage('Stage 2: AI analysis and cleanup...');
 
           addDebugLog(`Edge function response: ${JSON.stringify({ data, error })}`);
 
@@ -251,16 +297,40 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             throw new Error(`Edge function error: ${error.message || JSON.stringify(error)}`);
           }
 
-          if (data?.text) {
-            addDebugLog(`Transcription received: "${data.text}"`);
-            setPendingTranscript(data.text);
+          setProcessingProgress(90);
+          setProcessingStage('Finalizing results...');
+
+          if (data) {
+            addDebugLog(`Processing complete: ${JSON.stringify(data)}`);
+            
+            // Store performance metrics
+            if (data.processingStages) {
+              setPerformanceMetrics(data.processingStages);
+              addDebugLog(`Performance metrics: ${JSON.stringify(data.processingStages)}`);
+            }
+            
+            // Store the complete result
+            setTranscriptionResult({
+              rawTranscription: data.rawTranscription,
+              cleanedText: data.cleanedText,
+              extractedTasks: data.extractedTasks || [],
+              improvements: data.improvements,
+              timings: data.timings,
+              processingStages: data.processingStages
+            });
+
+            setProcessingProgress(100);
             setShowTranscriptPopup(true);
+            
+            const totalTime = Date.now() - processingStartTime.current;
+            addDebugLog(`Total client processing time: ${totalTime}ms`);
+            
             toast({
-              title: "Transcription Complete",
-              description: "Your voice has been converted to text successfully!"
+              title: "AI Processing Complete",
+              description: `Speech analyzed and cleaned up in ${data.processingStages?.totalTime || 'unknown time'}`
             });
           } else {
-            addDebugLog(`No transcription text in response: ${JSON.stringify(data)}`);
+            addDebugLog(`No data in response: ${JSON.stringify(data)}`);
             throw new Error('No transcription received from the service');
           }
         } catch (innerError: any) {
@@ -286,43 +356,44 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       }
       
       toast({
-        title: "Transcription Error",
+        title: "Processing Error",
         description: errorMessage,
         variant: "destructive"
       });
     } finally {
       setIsProcessing(false);
+      setProcessingStage('');
+      setProcessingProgress(0);
     }
   };
 
   const handleSaveTranscript = async () => {
     setIsProcessing(true);
-    addDebugLog(`Saving transcript: "${pendingTranscript}"`);
+    addDebugLog(`Saving transcript and extracted tasks`);
     
     try {
-      // Mock AI processing - in a real app, this would call an AI service
-      const mockTasks = [
-        {
-          title: "Call Ryan about meeting",
-          description: "Follow up on the meeting discussion",
-          priority: 'medium' as const,
-          completed: false
-        },
-        {
-          title: "Buy paint for bedroom",
-          description: "Purchase paint for bedroom decoration",
-          priority: 'low' as const,
-          completed: false
-        }
-      ];
+      const tasksToSave = transcriptionResult.extractedTasks || [];
+      
+      if (tasksToSave.length === 0) {
+        // Fallback: create a single task from the cleaned text
+        tasksToSave.push({
+          title: transcriptionResult.cleanedText?.substring(0, 50) + "..." || "Voice input task",
+          description: transcriptionResult.cleanedText || transcriptionResult.rawTranscription || "",
+          priority: 'medium' as const
+        });
+      }
 
-      addDebugLog(`Saving ${mockTasks.length} tasks to Supabase...`);
+      addDebugLog(`Saving ${tasksToSave.length} tasks to Supabase...`);
 
-      // Save each task to Supabase
-      for (const taskData of mockTasks) {
+      for (const taskData of tasksToSave) {
         const { data, error } = await supabase
           .from('tasks')
-          .insert([taskData])
+          .insert([{
+            title: taskData.title,
+            description: taskData.description,
+            priority: taskData.priority,
+            completed: false
+          }])
           .select()
           .single();
 
@@ -353,13 +424,13 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
       toast({
         title: "Tasks saved successfully!",
-        description: `${mockTasks.length} tasks have been processed and saved to your database.`
+        description: `${tasksToSave.length} tasks extracted and saved. ${transcriptionResult.improvements || ''}`
       });
 
-      // Reset states
-      setPendingTranscript('');
+      setTranscriptionResult({});
       setShowTranscriptPopup(false);
       setTranscript('');
+      setPerformanceMetrics({});
     } catch (error: any) {
       addDebugLog(`Error processing transcript: ${error.message}`);
       console.error('Error processing transcript:', error);
@@ -375,9 +446,10 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
   const handleCancelTranscript = () => {
     addDebugLog('Cancelling transcript');
-    setPendingTranscript('');
+    setTranscriptionResult({});
     setShowTranscriptPopup(false);
     setTranscript('');
+    setPerformanceMetrics({});
     toast({
       title: "Transcript Cancelled",
       description: "Your transcription has been discarded."
@@ -422,8 +494,17 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           </h1>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-            <p className="text-cyan-200/80 font-medium">Capture thoughts instantly</p>
+            <p className="text-cyan-200/80 font-medium">AI-powered speech processing</p>
           </div>
+          {/* Performance metrics display */}
+          {Object.keys(performanceMetrics).length > 0 && (
+            <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
+              <Clock className="w-3 h-3" />
+              <span>Whisper: {performanceMetrics.whisperTime}</span>
+              <span>ChatGPT: {performanceMetrics.chatgptTime}</span>
+              <span>Total: {performanceMetrics.totalTime}</span>
+            </div>
+          )}
         </div>
         
         {/* Debug toggle */}
@@ -441,7 +522,10 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       {debugMode && (
         <div className="mx-6 mb-4 p-4 bg-slate-800/50 backdrop-blur rounded-lg border border-slate-600 relative z-10">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-medium text-slate-300">Debug Logs</h3>
+            <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
+              <Cpu className="w-4 h-4" />
+              Debug Logs & Performance
+            </h3>
             <Button
               variant="outline"
               size="sm"
@@ -459,6 +543,20 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                 <div key={index} className="break-words">{log}</div>
               ))
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Processing Progress */}
+      {isProcessing && (
+        <div className="mx-6 mb-4 p-4 bg-slate-800/50 backdrop-blur rounded-lg border border-cyan-500/30 relative z-10">
+          <div className="flex items-center gap-3 mb-3">
+            <Zap className="w-5 h-5 text-cyan-400 animate-pulse" />
+            <span className="text-cyan-200 font-medium">{processingStage}</span>
+          </div>
+          <Progress value={processingProgress} className="h-2" />
+          <div className="text-xs text-slate-400 mt-2">
+            {processingProgress}% complete
           </div>
         </div>
       )}
@@ -531,7 +629,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             <div className="flex items-center gap-3 text-xl text-cyan-100">
               <Zap className="w-6 h-6 text-cyan-400 animate-pulse" />
               <span className="font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
-                AI processing voice to text...
+                {processingStage || 'AI processing...'}
               </span>
             </div>
           ) : isRecording ? (
@@ -542,14 +640,14 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                   Recording... Press again to stop
                 </span>
               </p>
-              <p className="text-sm text-slate-300/80">Whisper AI is capturing your voice</p>
+              <p className="text-sm text-slate-300/80">Whisper AI + ChatGPT will process your voice</p>
             </div>
           ) : (
             <div className="space-y-3">
               <p className="text-xl text-white font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
                 Tap to start recording
               </p>
-              <p className="text-sm text-slate-300/80">Press once to record, press again to process with OpenAI Whisper</p>
+              <p className="text-sm text-slate-300/80">Two-stage AI processing: Whisper transcription → ChatGPT cleanup</p>
               <div className="hidden md:block">
                 <p className="text-xs text-purple-300/80">Use demo for quick prototyping or test API for debugging</p>
               </div>
@@ -568,18 +666,91 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         </div>
       </div>
 
-      {/* Transcript Popup */}
-      {showTranscriptPopup && pendingTranscript && (
+      {/* Enhanced Transcript Popup */}
+      {showTranscriptPopup && transcriptionResult && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-lg shadow-2xl border-0 bg-slate-800/90 backdrop-blur-xl border border-cyan-500/30 animate-in fade-in-0 zoom-in-95 duration-300">
+          <Card className="w-full max-w-2xl shadow-2xl border-0 bg-slate-800/90 backdrop-blur-xl border border-cyan-500/30 animate-in fade-in-0 zoom-in-95 duration-300">
             <CardContent className="p-6">
               <div className="flex items-start gap-3 mb-6">
                 <div className="w-2 h-2 bg-cyan-400 rounded-full mt-2 flex-shrink-0 animate-pulse"></div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-white mb-3">Transcription Complete</h3>
-                  <p className="text-slate-200 leading-relaxed italic bg-slate-700/50 p-4 rounded-lg border border-slate-600/30">
-                    "{pendingTranscript}"
-                  </p>
+                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    AI Processing Complete
+                    {transcriptionResult.processingStages?.totalTime && (
+                      <Badge variant="outline" className="text-xs">
+                        {transcriptionResult.processingStages.totalTime}
+                      </Badge>
+                    )}
+                  </h3>
+                  
+                  {/* Before/After Comparison */}
+                  {transcriptionResult.rawTranscription && transcriptionResult.cleanedText && (
+                    <div className="space-y-4 mb-4">
+                      {transcriptionResult.rawTranscription !== transcriptionResult.cleanedText && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-xs text-slate-400 mb-2">Original (Whisper):</p>
+                            <p className="text-slate-300 text-sm italic bg-slate-700/30 p-3 rounded border border-slate-600/30">
+                              "{transcriptionResult.rawTranscription}"
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-emerald-400 mb-2">Cleaned (ChatGPT):</p>
+                            <p className="text-emerald-200 text-sm bg-emerald-900/20 p-3 rounded border border-emerald-500/30">
+                              "{transcriptionResult.cleanedText}"
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {transcriptionResult.rawTranscription === transcriptionResult.cleanedText && (
+                        <div>
+                          <p className="text-xs text-slate-400 mb-2">Transcription:</p>
+                          <p className="text-slate-200 bg-slate-700/50 p-3 rounded border border-slate-600/30">
+                            "{transcriptionResult.cleanedText}"
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Extracted Tasks */}
+                  {transcriptionResult.extractedTasks && transcriptionResult.extractedTasks.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-xs text-cyan-400 mb-2">Extracted Tasks ({transcriptionResult.extractedTasks.length}):</p>
+                      <div className="space-y-2">
+                        {transcriptionResult.extractedTasks.map((task, index) => (
+                          <div key={index} className="bg-cyan-900/20 p-3 rounded border border-cyan-500/30">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-cyan-200 font-medium text-sm">{task.title}</p>
+                              <Badge variant={task.priority === 'high' ? 'destructive' : task.priority === 'medium' ? 'default' : 'secondary'} className="text-xs">
+                                {task.priority}
+                              </Badge>
+                            </div>
+                            <p className="text-slate-300 text-xs">{task.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Improvements & Performance */}
+                  <div className="space-y-2">
+                    {transcriptionResult.improvements && (
+                      <p className="text-xs text-purple-300 bg-purple-900/20 p-2 rounded border border-purple-500/30">
+                        <Sparkles className="w-3 h-3 inline mr-1" />
+                        {transcriptionResult.improvements}
+                      </p>
+                    )}
+                    
+                    {transcriptionResult.processingStages && (
+                      <div className="flex gap-4 text-xs text-slate-400">
+                        <span>Whisper: {transcriptionResult.processingStages.whisperTime}</span>
+                        <span>ChatGPT: {transcriptionResult.processingStages.chatgptTime}</span>
+                        <span>DB: {transcriptionResult.processingStages.databaseTime}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               
@@ -603,12 +774,12 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                   {isProcessing ? (
                     <>
                       <Zap className="w-4 h-4 animate-pulse" />
-                      Processing...
+                      Saving...
                     </>
                   ) : (
                     <>
                       <Check className="w-4 h-4" />
-                      Save to Database
+                      Save {transcriptionResult.extractedTasks?.length || 1} Task{transcriptionResult.extractedTasks?.length !== 1 ? 's' : ''}
                     </>
                   )}
                 </Button>
