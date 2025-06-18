@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';

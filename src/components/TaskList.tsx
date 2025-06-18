@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ArrowLeft, Mic, Calendar, Trash2, CheckCircle2, Circle, Zap, Brain, ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -104,11 +105,11 @@ export const TaskList: React.FC<TaskListProps> = ({
       <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-cyan-500/10" />
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-400/50 to-transparent animate-pulse" />
       
-      {/* Swipe indicators - Both sides */}
+      {/* Swipe indicators - Updated to match tab style */}
       <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
         <div className="flex items-center gap-1 text-cyan-300 text-xs font-medium">
           <ChevronLeft className="w-4 h-4 animate-pulse" />
-          <span>Voice</span>
+          <span>Voice Input</span>
         </div>
         <div className="text-[10px] text-slate-400">Swipe</div>
       </div>
@@ -142,12 +143,8 @@ export const TaskList: React.FC<TaskListProps> = ({
               No messages yet
             </h3>
             <p className="text-slate-300/80 mb-6 leading-relaxed max-w-sm">
-              Start capturing your thoughts by speaking into the microphone
+              Go to Voice Input to start capturing your thoughts
             </p>
-            <Button onClick={onSwitchToMic} className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 shadow-lg hover:shadow-cyan-500/20 transition-all duration-300">
-              <ArrowLeft className="w-4 h-4" />
-              Start Recording
-            </Button>
           </div> : <div className="p-6 space-y-6">
             {/* Incomplete Tasks */}
             {incompleteTasks.length > 0 && <div>
