@@ -42,6 +42,27 @@ export type Database = {
         }
         Relationships: []
       }
+      transcriptions: {
+        Row: {
+          audio_length: number | null
+          created_at: string
+          id: string
+          text: string
+        }
+        Insert: {
+          audio_length?: number | null
+          created_at?: string
+          id?: string
+          text: string
+        }
+        Update: {
+          audio_length?: number | null
+          created_at?: string
+          id?: string
+          text?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

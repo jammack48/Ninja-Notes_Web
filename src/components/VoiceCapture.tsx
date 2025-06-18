@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check } from 'lucide-react';
+import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check, Bug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,42 +24,93 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [showTranscriptPopup, setShowTranscriptPopup] = useState(false);
   const [pendingTranscript, setPendingTranscript] = useState('');
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const { toast } = useToast();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  const addDebugLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logMessage = `[${timestamp}] ${message}`;
+    console.log(logMessage);
+    setDebugLogs(prev => [...prev.slice(-9), logMessage]);
+  };
+
+  const getMimeType = () => {
+    // Check supported MIME types in order of preference
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/wav',
+      'audio/ogg;codecs=opus',
+      'audio/ogg'
+    ];
+    
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        addDebugLog(`Using MIME type: ${type}`);
+        return type;
+      }
+    }
+    
+    addDebugLog('No supported MIME type found, using default');
+    return '';
+  };
+
   const startRecording = async () => {
-    console.log('Starting recording...');
+    addDebugLog('Starting recording...');
     try {
+      // Check if MediaRecorder is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('MediaRecorder not supported on this device');
+      }
+
+      addDebugLog('Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        }
       });
       
-      console.log('Microphone access granted');
-      const mediaRecorder = new MediaRecorder(stream);
+      addDebugLog('Microphone access granted');
+      
+      const mimeType = getMimeType();
+      const options = mimeType ? { mimeType } : undefined;
+      
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = event => {
-        console.log('Audio data available:', event.data.size);
+        addDebugLog(`Audio data available: ${event.data.size} bytes`);
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
 
       mediaRecorder.onstop = async () => {
-        console.log('Recording stopped, processing audio...');
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: 'audio/webm'
-        });
-        console.log('Audio blob created:', audioBlob.size, 'bytes');
+        addDebugLog('Recording stopped, processing audio...');
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        addDebugLog(`Audio blob created: ${audioBlob.size} bytes, type: ${audioBlob.type}`);
         await processAudio(audioBlob);
 
         // Stop all tracks
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(track => {
+          track.stop();
+          addDebugLog(`Stopped track: ${track.kind}`);
+        });
       };
 
-      mediaRecorder.start();
+      mediaRecorder.onerror = (event) => {
+        addDebugLog(`MediaRecorder error: ${event}`);
+      };
+
+      mediaRecorder.start(1000); // Collect data every 1 second
       setIsRecording(true);
       setTranscript('');
       
@@ -67,18 +118,29 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         title: "Recording Started",
         description: "Speak now. Press the button again to stop and process."
       });
-    } catch (error) {
+    } catch (error: any) {
+      addDebugLog(`Error starting recording: ${error.message}`);
       console.error('Error starting recording:', error);
+      
+      let errorMessage = "Could not access microphone.";
+      if (error.name === 'NotAllowedError') {
+        errorMessage = "Microphone permission denied. Please allow microphone access and try again.";
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = "No microphone found. Please check your device settings.";
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage = "Audio recording not supported on this device.";
+      }
+      
       toast({
         title: "Recording Error",
-        description: "Could not access microphone. Please check permissions.",
+        description: errorMessage,
         variant: "destructive"
       });
     }
   };
 
   const stopRecording = () => {
-    console.log('Stopping recording...');
+    addDebugLog('Stopping recording...');
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
@@ -90,8 +152,66 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     }
   };
 
+  const testEdgeFunction = async () => {
+    addDebugLog('Testing edge function with simulated audio...');
+    setIsProcessing(true);
+    
+    try {
+      // Create a minimal valid WAV file (1 second of silence)
+      const sampleRate = 44100;
+      const numChannels = 1;
+      const bitsPerSample = 16;
+      const duration = 1; // 1 second
+      
+      const numSamples = sampleRate * duration;
+      const arrayBuffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(arrayBuffer);
+      
+      // WAV header
+      const writeString = (offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
+      
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeString(8, 'WAVE');
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true);
+      view.setUint16(32, numChannels * bitsPerSample / 8, true);
+      view.setUint16(34, bitsPerSample, true);
+      writeString(36, 'data');
+      view.setUint32(40, numSamples * 2, true);
+      
+      // Generate a simple tone instead of silence for better recognition
+      for (let i = 0; i < numSamples; i++) {
+        const sample = Math.sin(2 * Math.PI * 440 * i / sampleRate) * 0.1; // 440Hz tone at low volume
+        view.setInt16(44 + i * 2, sample * 32767, true);
+      }
+      
+      const audioBlob = new Blob([arrayBuffer], { type: 'audio/wav' });
+      addDebugLog(`Test audio blob created: ${audioBlob.size} bytes`);
+      
+      await processAudio(audioBlob);
+    } catch (error: any) {
+      addDebugLog(`Test failed: ${error.message}`);
+      toast({
+        title: "Test Failed",
+        description: `Edge function test failed: ${error.message}`,
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const simulateVoiceInput = () => {
-    console.log('Simulating voice input...');
+    addDebugLog('Simulating voice input...');
     const demoMessage = "Call Ryan tomorrow and buy paint for bedroom";
     setPendingTranscript(demoMessage);
     setShowTranscriptPopup(true);
@@ -103,7 +223,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
   const processAudio = async (audioBlob: Blob) => {
     setIsProcessing(true);
-    console.log('Processing audio blob of size:', audioBlob.size);
+    addDebugLog(`Processing audio blob of size: ${audioBlob.size}, type: ${audioBlob.type}`);
     
     try {
       // Convert audio blob to base64
@@ -113,9 +233,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       reader.onloadend = async () => {
         try {
           const base64Audio = (reader.result as string).split(',')[1];
-          console.log('Base64 audio length:', base64Audio.length);
+          addDebugLog(`Base64 audio length: ${base64Audio.length}`);
 
-          console.log('Calling voice-to-text edge function...');
+          addDebugLog('Calling voice-to-text edge function...');
           
           // Call the voice-to-text edge function
           const { data, error } = await supabase.functions.invoke('voice-to-text', {
@@ -124,15 +244,15 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             }
           });
 
-          console.log('Edge function response:', { data, error });
+          addDebugLog(`Edge function response: ${JSON.stringify({ data, error })}`);
 
           if (error) {
-            console.error('Edge function error:', error);
+            addDebugLog(`Edge function error: ${JSON.stringify(error)}`);
             throw new Error(`Edge function error: ${error.message || JSON.stringify(error)}`);
           }
 
           if (data?.text) {
-            console.log('Transcription received:', data.text);
+            addDebugLog(`Transcription received: "${data.text}"`);
             setPendingTranscript(data.text);
             setShowTranscriptPopup(true);
             toast({
@@ -140,25 +260,34 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               description: "Your voice has been converted to text successfully!"
             });
           } else {
-            console.error('No transcription text in response:', data);
+            addDebugLog(`No transcription text in response: ${JSON.stringify(data)}`);
             throw new Error('No transcription received from the service');
           }
-        } catch (innerError) {
-          console.error('Error in reader.onloadend:', innerError);
+        } catch (innerError: any) {
+          addDebugLog(`Error in reader.onloadend: ${innerError.message}`);
           throw innerError;
         }
       };
 
       reader.onerror = (error) => {
-        console.error('FileReader error:', error);
+        addDebugLog(`FileReader error: ${error}`);
         throw new Error('Failed to read audio file');
       };
 
-    } catch (error) {
+    } catch (error: any) {
+      addDebugLog(`Error processing audio: ${error.message}`);
       console.error('Error processing audio:', error);
+      
+      let errorMessage = `Failed to convert speech to text: ${error.message}`;
+      if (error.message.includes('API key')) {
+        errorMessage = "OpenAI API key not configured. Please check your Supabase Edge Function secrets.";
+      } else if (error.message.includes('OpenAI service')) {
+        errorMessage = "OpenAI service error. Please try again later.";
+      }
+      
       toast({
         title: "Transcription Error",
-        description: `Failed to convert speech to text: ${error.message}`,
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -168,7 +297,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
   const handleSaveTranscript = async () => {
     setIsProcessing(true);
-    console.log('Saving transcript:', pendingTranscript);
+    addDebugLog(`Saving transcript: "${pendingTranscript}"`);
     
     try {
       // Mock AI processing - in a real app, this would call an AI service
@@ -187,7 +316,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         }
       ];
 
-      console.log('Saving tasks to Supabase:', mockTasks);
+      addDebugLog(`Saving ${mockTasks.length} tasks to Supabase...`);
 
       // Save each task to Supabase
       for (const taskData of mockTasks) {
@@ -198,11 +327,11 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           .single();
 
         if (error) {
-          console.error('Error saving task:', error);
+          addDebugLog(`Error saving task: ${JSON.stringify(error)}`);
           throw error;
         }
 
-        console.log('Task saved successfully:', data);
+        addDebugLog(`Task saved successfully: ${data.title}`);
 
         const rawPriority = data.priority;
         if (!['low', 'medium', 'high'].includes(rawPriority)) {
@@ -231,7 +360,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       setPendingTranscript('');
       setShowTranscriptPopup(false);
       setTranscript('');
-    } catch (error) {
+    } catch (error: any) {
+      addDebugLog(`Error processing transcript: ${error.message}`);
       console.error('Error processing transcript:', error);
       toast({
         title: "Error saving tasks",
@@ -244,7 +374,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   };
 
   const handleCancelTranscript = () => {
-    console.log('Cancelling transcript');
+    addDebugLog('Cancelling transcript');
     setPendingTranscript('');
     setShowTranscriptPopup(false);
     setTranscript('');
@@ -268,7 +398,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent animate-pulse" />
       
-      {/* Swipe indicators - Both sides */}
       <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
         <div className="flex items-center gap-1 text-slate-400 text-xs font-medium">
           <ChevronLeft className="w-4 h-4 animate-pulse" />
@@ -296,12 +425,62 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             <p className="text-cyan-200/80 font-medium">Capture thoughts instantly</p>
           </div>
         </div>
+        
+        {/* Debug toggle */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setDebugMode(!debugMode)}
+          className="border-slate-600 text-slate-300 hover:bg-slate-700"
+        >
+          <Bug className="w-4 h-4" />
+        </Button>
       </div>
+
+      {/* Debug Panel */}
+      {debugMode && (
+        <div className="mx-6 mb-4 p-4 bg-slate-800/50 backdrop-blur rounded-lg border border-slate-600 relative z-10">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-sm font-medium text-slate-300">Debug Logs</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDebugLogs([])}
+              className="text-xs border-slate-600 text-slate-400 hover:bg-slate-700"
+            >
+              Clear
+            </Button>
+          </div>
+          <div className="space-y-1 max-h-32 overflow-y-auto text-xs text-slate-400 font-mono">
+            {debugLogs.length === 0 ? (
+              <p>No logs yet...</p>
+            ) : (
+              debugLogs.map((log, index) => (
+                <div key={index} className="break-words">{log}</div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-10 relative z-10">
         {/* Microphone and Demo Button Container */}
         <div className="flex items-center gap-8">
+          {/* Test Button (Desktop only) */}
+          <div className="hidden md:block">
+            <Button 
+              size="lg" 
+              onClick={testEdgeFunction} 
+              disabled={isProcessing || isRecording} 
+              className="w-20 h-20 rounded-full transition-all duration-500 shadow-2xl border-2 bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 border-green-400/50 shadow-green-500/30 group relative overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <Zap className="w-8 h-8 text-white drop-shadow-lg relative z-10" />
+            </Button>
+            <p className="text-xs text-green-300 text-center mt-2 font-medium">Test API</p>
+          </div>
+
           {/* Demo Button (Desktop only) */}
           <div className="hidden md:block">
             <Button 
@@ -372,7 +551,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               </p>
               <p className="text-sm text-slate-300/80">Press once to record, press again to process with OpenAI Whisper</p>
               <div className="hidden md:block">
-                <p className="text-xs text-purple-300/80">Or use the demo button for quick prototyping</p>
+                <p className="text-xs text-purple-300/80">Use demo for quick prototyping or test API for debugging</p>
               </div>
             </div>
           )}
