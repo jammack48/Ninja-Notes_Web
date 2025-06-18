@@ -165,7 +165,7 @@ export const TaskList: React.FC<TaskListProps> = ({
           <Mic className="w-4 h-4" />
         </Button>
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-white tracking-tight mb-1">Neural Task Network</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight mb-1">Messages</h1>
           <p className="text-cyan-200/80 font-medium flex items-center justify-center gap-2">
             <Brain className="w-4 h-4" />
             {incompleteTasks.length} active {incompleteTasks.length === 1 ? 'task' : 'tasks'}
@@ -182,17 +182,17 @@ export const TaskList: React.FC<TaskListProps> = ({
               <Mic className="w-12 h-12 text-cyan-400" />
             </div>
             <h3 className="text-xl font-semibold text-white mb-3 bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
-              Neural network empty
+              No messages yet
             </h3>
             <p className="text-slate-300/80 mb-6 leading-relaxed max-w-sm">
-              Begin neural task capture by speaking your thoughts into the quantum microphone
+              Start capturing your thoughts by speaking into the microphone
             </p>
             <Button 
               onClick={onSwitchToMic} 
               className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 shadow-lg hover:shadow-cyan-500/20 transition-all duration-300"
             >
               <ArrowLeft className="w-4 h-4" />
-              Activate Neural Input
+              Start Recording
             </Button>
           </div>
         ) : (
@@ -240,7 +240,7 @@ export const TaskList: React.FC<TaskListProps> = ({
       <div className="p-4 bg-slate-800/30 backdrop-blur-xl border-t border-cyan-500/20 md:hidden">
         <p className="text-xs text-slate-400 text-center flex items-center justify-center gap-2">
           <ArrowLeft className="w-3 h-3" />
-          Swipe left to return to neural input mode
+          Swipe left to return to voice input mode
         </p>
       </div>
 
