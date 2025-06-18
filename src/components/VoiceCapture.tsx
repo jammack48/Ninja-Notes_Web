@@ -117,13 +117,13 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         {
           title: "Call Ryan about meeting",
           description: "Follow up on the meeting discussion",
-          priority: 'medium' as 'low' | 'medium' | 'high',
+          priority: 'medium' as const,
           completed: false,
         },
         {
           title: "Buy paint for bedroom",
           description: "Purchase paint for bedroom decoration",
-          priority: 'low' as 'low' | 'medium' | 'high',
+          priority: 'low' as const,
           completed: false,
         }
       ];
