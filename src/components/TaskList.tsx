@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ArrowLeft, Mic, Calendar, Trash2, CheckCircle2, Circle, Zap, Brain, ChevronLeft, Check } from 'lucide-react';
+import { ArrowLeft, Mic, Calendar, Trash2, CheckCircle2, Circle, Zap, Brain, ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -136,11 +136,19 @@ export const TaskList: React.FC<TaskListProps> = ({
       <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-cyan-500/10" />
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-400/50 to-transparent animate-pulse" />
       
-      {/* Swipe indicator - Left side */}
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300">
+      {/* Swipe indicators - Both sides */}
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
         <div className="flex items-center gap-1 text-cyan-300 text-xs font-medium">
           <ChevronLeft className="w-4 h-4 animate-pulse" />
           <span>Voice</span>
+        </div>
+        <div className="text-[10px] text-slate-400">Swipe</div>
+      </div>
+      
+      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
+        <div className="flex items-center gap-1 text-slate-400 text-xs font-medium">
+          <span>Back</span>
+          <ChevronRight className="w-4 h-4 animate-pulse" />
         </div>
         <div className="text-[10px] text-slate-400">Swipe</div>
       </div>
@@ -151,7 +159,7 @@ export const TaskList: React.FC<TaskListProps> = ({
           variant="outline" 
           size="sm"
           onClick={onSwitchToMic}
-          className="flex items-center gap-2 bg-slate-800/50 backdrop-blur-sm border-cyan-500/30 hover:bg-slate-700/50 text-cyan-100 hover:text-white shadow-lg hover:shadow-cyan-500/20 transition-all duration-300"
+          className="flex items-center gap-2 bg-slate-800/50 backdrop-blur-sm border-cyan-500/30 hover:bg-slate-700/50 text-cyan-100 hover:text-white shadow-lg hover:shadow-cyan-500/20 transition-all duration-300 md:hidden"
         >
           <ArrowLeft className="w-4 h-4" />
           <Mic className="w-4 h-4" />
@@ -163,7 +171,7 @@ export const TaskList: React.FC<TaskListProps> = ({
             {incompleteTasks.length} active {incompleteTasks.length === 1 ? 'task' : 'tasks'}
           </p>
         </div>
-        <div className="w-20"></div>
+        <div className="w-20 md:hidden"></div>
       </div>
 
       {/* Content */}
@@ -229,7 +237,7 @@ export const TaskList: React.FC<TaskListProps> = ({
       </div>
 
       {/* Footer hint */}
-      <div className="p-4 bg-slate-800/30 backdrop-blur-xl border-t border-cyan-500/20">
+      <div className="p-4 bg-slate-800/30 backdrop-blur-xl border-t border-cyan-500/20 md:hidden">
         <p className="text-xs text-slate-400 text-center flex items-center justify-center gap-2">
           <ArrowLeft className="w-3 h-3" />
           Swipe left to return to neural input mode

@@ -1,5 +1,6 @@
+
 import React, { useState, useRef } from 'react';
-import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight } from 'lucide-react';
+import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -192,8 +193,16 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent animate-pulse" />
       
-      {/* Swipe indicator - Right side */}
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300">
+      {/* Swipe indicators - Both sides */}
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
+        <div className="flex items-center gap-1 text-slate-400 text-xs font-medium">
+          <ChevronLeft className="w-4 h-4 animate-pulse" />
+          <span>Back</span>
+        </div>
+        <div className="text-[10px] text-slate-400">Swipe</div>
+      </div>
+      
+      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
         <div className="flex items-center gap-1 text-cyan-300 text-xs font-medium">
           <span>Tasks</span>
           <ChevronRight className="w-4 h-4 animate-pulse" />
@@ -216,7 +225,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           variant="outline" 
           size="sm"
           onClick={onSwitchToTasks}
-          className="flex items-center gap-2 bg-slate-800/50 backdrop-blur-sm border-cyan-500/30 hover:bg-slate-700/50 text-cyan-100 hover:text-white shadow-lg hover:shadow-cyan-500/20 transition-all duration-300"
+          className="flex items-center gap-2 bg-slate-800/50 backdrop-blur-sm border-cyan-500/30 hover:bg-slate-700/50 text-cyan-100 hover:text-white shadow-lg hover:shadow-cyan-500/20 transition-all duration-300 md:hidden"
         >
           <List className="w-4 h-4" />
           {taskCount > 0 && (
@@ -281,6 +290,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           </div>
         </div>
 
+        {/* Status Text */}
         <div className="text-center">
           {isProcessing ? (
             <div className="flex items-center gap-3 text-xl text-cyan-100">
