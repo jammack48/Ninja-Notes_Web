@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Task } from '@/types/Task';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/components/ui/use-toast';
 
 interface VoiceCaptureProps {
   onTaskCreated: (task: Task) => void;
@@ -20,6 +22,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const { toast } = useToast();
 
   const startRecording = () => {
     setIsRecording(true);
@@ -36,33 +39,73 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     }
   };
 
-  const processTranscript = () => {
+  const processTranscript = async () => {
     setIsProcessing(true);
     
-    setTimeout(() => {
+    try {
+      // Mock AI processing - in a real app, this would call an AI service
       const mockTasks = [
         {
-          id: Date.now().toString(),
           title: "Call Ryan about meeting",
           description: "Follow up on the meeting discussion",
           priority: 'medium' as const,
           completed: false,
-          createdAt: new Date().toISOString(),
         },
         {
-          id: (Date.now() + 1).toString(),
           title: "Buy paint for bedroom",
           description: "Purchase paint for bedroom decoration",
           priority: 'low' as const,
           completed: false,
-          createdAt: new Date().toISOString(),
         }
       ];
 
-      mockTasks.forEach(task => onTaskCreated(task));
+      console.log('Saving tasks to Supabase:', mockTasks);
+
+      // Save each task to Supabase
+      for (const taskData of mockTasks) {
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert([taskData])
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Error saving task:', error);
+          throw error;
+        }
+
+        console.log('Task saved successfully:', data);
+
+        // Create the task object with the returned data
+        const newTask: Task = {
+          id: data.id,
+          title: data.title,
+          description: data.description,
+          priority: data.priority,
+          dueDate: data.due_date,
+          completed: data.completed,
+          createdAt: data.created_at,
+        };
+
+        onTaskCreated(newTask);
+      }
+
+      toast({
+        title: "Tasks saved successfully!",
+        description: `${mockTasks.length} tasks have been processed and saved to your database.`,
+      });
+
       setTranscript('');
+    } catch (error) {
+      console.error('Error processing transcript:', error);
+      toast({
+        title: "Error saving tasks",
+        description: "There was an error saving your tasks. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
       setIsProcessing(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -99,9 +142,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-10 relative z-10">
-        {/* Microphone Button */}
         <div className="relative">
-          {/* Outer glow rings */}
           <div className={`absolute -inset-20 rounded-full transition-all duration-500 ${
             isRecording ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 animate-pulse' : ''
           }`}></div>
@@ -119,7 +160,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                 : 'bg-gradient-to-br from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 border-cyan-400/50 shadow-cyan-500/30'
             } group`}
           >
-            {/* Inner glow effect */}
             <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             
             {isRecording ? (
@@ -128,7 +168,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               <Mic className="w-16 h-16 text-white drop-shadow-lg relative z-10" />
             )}
             
-            {/* Animated border */}
             <div className={`absolute inset-0 rounded-full transition-all duration-300 ${
               isRecording ? 'animate-spin' : ''
             }`}>
@@ -137,13 +176,12 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           </Button>
         </div>
 
-        {/* Status Text */}
         <div className="text-center">
           {isProcessing ? (
             <div className="flex items-center gap-3 text-xl text-cyan-100">
               <Zap className="w-6 h-6 text-cyan-400 animate-pulse" />
               <span className="font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
-                AI processing your thoughts...
+                AI processing and saving to database...
               </span>
             </div>
           ) : isRecording ? (
@@ -181,7 +219,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                   className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 shadow-lg hover:shadow-cyan-500/20 transition-all duration-300"
                 >
                   <Sparkles className="w-4 h-4" />
-                  Process with AI
+                  Save to Database
                   <ArrowRight className="w-4 h-4" />
                 </Button>
               </div>
@@ -201,7 +239,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         </div>
       </div>
 
-      {/* Bottom accent line */}
       <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-400/50 to-transparent" />
     </div>
   );
