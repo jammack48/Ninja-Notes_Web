@@ -204,7 +204,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       
       <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
         <div className="flex items-center gap-1 text-cyan-300 text-xs font-medium">
-          <span>Tasks</span>
+          <span>Messages</span>
           <ChevronRight className="w-4 h-4 animate-pulse" />
         </div>
         <div className="text-[10px] text-slate-400">Swipe</div>
@@ -214,7 +214,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       <div className="flex justify-between items-center p-6 pt-16 relative z-10">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight mb-1">
-            Task Whisper
+            Voice Input
           </h1>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
