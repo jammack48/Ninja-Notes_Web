@@ -1,10 +1,11 @@
-
 import React, { useState } from 'react';
 import { VoiceCapture } from '@/components/VoiceCapture';
 import { TaskList } from '@/components/TaskList';
+import { LockScreen } from '@/components/LockScreen';
 import { Task } from '@/types/Task';
 
 const Index = () => {
+  const [isUnlocked, setIsUnlocked] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<'mic' | 'tasks'>('mic');
   const [tasks, setTasks] = useState<Task[]>([]);
 
@@ -21,6 +22,15 @@ const Index = () => {
   const deleteTask = (id: string) => {
     setTasks(prev => prev.filter(task => task.id !== id));
   };
+
+  const handleUnlock = () => {
+    setIsUnlocked(true);
+  };
+
+  // Show lock screen if not unlocked
+  if (!isUnlocked) {
+    return <LockScreen onUnlock={handleUnlock} />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 overflow-hidden relative">
