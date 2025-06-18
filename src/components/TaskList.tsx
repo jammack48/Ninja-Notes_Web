@@ -1,11 +1,13 @@
 
 import React from 'react';
-import { ArrowLeft, Mic, Calendar, Trash2, CheckCircle2, Circle, Zap, Brain } from 'lucide-react';
+import { ArrowLeft, Mic, Calendar, Trash2, CheckCircle2, Circle, Zap, Brain, ChevronLeft, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Task } from '@/types/Task';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/components/ui/use-toast';
 
 interface TaskListProps {
   tasks: Task[];
@@ -20,6 +22,7 @@ export const TaskList: React.FC<TaskListProps> = ({
   onDeleteTask,
   onSwitchToMic
 }) => {
+  const { toast } = useToast();
   const incompleteTasks = tasks.filter(task => !task.completed);
   const completedTasks = tasks.filter(task => task.completed);
 
@@ -29,6 +32,32 @@ export const TaskList: React.FC<TaskListProps> = ({
       case 'medium': return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
       case 'low': return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
       default: return 'bg-slate-500/20 text-slate-300 border-slate-500/30';
+    }
+  };
+
+  const handleDoneTask = async (taskId: string) => {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) {
+        throw error;
+      }
+
+      onDeleteTask(taskId);
+      toast({
+        title: "Task completed!",
+        description: "Task has been marked as done and removed.",
+      });
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete task. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -73,14 +102,27 @@ export const TaskList: React.FC<TaskListProps> = ({
                   </div>
                 )}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onDeleteTask(task.id)}
-                className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-2 h-auto transition-all duration-300"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                {task.completed && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDoneTask(task.id)}
+                    className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-2 h-auto transition-all duration-300 flex items-center gap-1"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span className="text-xs">Done</span>
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onDeleteTask(task.id)}
+                  className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-2 h-auto transition-all duration-300"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -93,6 +135,15 @@ export const TaskList: React.FC<TaskListProps> = ({
       {/* Background effects */}
       <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-cyan-500/10" />
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-400/50 to-transparent animate-pulse" />
+      
+      {/* Swipe indicator - Left side */}
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300">
+        <div className="flex items-center gap-1 text-cyan-300 text-xs font-medium">
+          <ChevronLeft className="w-4 h-4 animate-pulse" />
+          <span>Voice</span>
+        </div>
+        <div className="text-[10px] text-slate-400">Swipe</div>
+      </div>
       
       {/* Header */}
       <div className="flex justify-between items-center p-6 pt-16 bg-slate-800/30 backdrop-blur-xl border-b border-cyan-500/20 relative z-10">

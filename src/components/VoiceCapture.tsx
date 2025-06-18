@@ -1,6 +1,5 @@
-
 import React, { useState, useRef } from 'react';
-import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play } from 'lucide-react';
+import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -192,6 +191,15 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       {/* Futuristic background pattern */}
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent animate-pulse" />
+      
+      {/* Swipe indicator - Right side */}
+      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300">
+        <div className="flex items-center gap-1 text-cyan-300 text-xs font-medium">
+          <span>Tasks</span>
+          <ChevronRight className="w-4 h-4 animate-pulse" />
+        </div>
+        <div className="text-[10px] text-slate-400">Swipe</div>
+      </div>
       
       {/* Header */}
       <div className="flex justify-between items-center p-6 pt-16 relative z-10">
