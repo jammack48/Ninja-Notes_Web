@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showTranscriptPopup, setShowTranscriptPopup] = useState(false);
+  const [pendingTranscript, setPendingTranscript] = useState('');
   const { toast } = useToast();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -69,7 +71,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
   const simulateVoiceInput = () => {
     const demoMessage = "Call Ryan tomorrow and buy paint for bedroom";
-    setTranscript(demoMessage);
+    setPendingTranscript(demoMessage);
+    setShowTranscriptPopup(true);
     toast({
       title: "Demo Message Simulated",
       description: "Voice input simulated for prototyping purposes",
@@ -97,7 +100,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         }
 
         if (data?.text) {
-          setTranscript(data.text);
+          setPendingTranscript(data.text);
+          setShowTranscriptPopup(true);
           toast({
             title: "Transcription Complete",
             description: "Your voice has been converted to text successfully!",
@@ -118,7 +122,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     }
   };
 
-  const processTranscript = async () => {
+  const handleSaveTranscript = async () => {
     setIsProcessing(true);
     
     try {
@@ -174,6 +178,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         description: `${mockTasks.length} tasks have been processed and saved to your database.`,
       });
 
+      // Reset states
+      setPendingTranscript('');
+      setShowTranscriptPopup(false);
       setTranscript('');
     } catch (error) {
       console.error('Error processing transcript:', error);
@@ -184,6 +191,24 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleCancelTranscript = () => {
+    setPendingTranscript('');
+    setShowTranscriptPopup(false);
+    setTranscript('');
+    toast({
+      title: "Transcript Cancelled",
+      description: "Your transcription has been discarded.",
+    });
+  };
+
+  const handleRecordingToggle = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
     }
   };
 
@@ -265,7 +290,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             
             <Button
               size="lg"
-              onClick={isRecording ? stopRecording : startRecording}
+              onClick={handleRecordingToggle}
               disabled={isProcessing}
               className={`w-40 h-40 rounded-full transition-all duration-500 shadow-2xl border-2 relative overflow-hidden ${
                 isRecording 
@@ -304,7 +329,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               <p className="text-xl text-red-300 font-semibold flex items-center justify-center gap-2">
                 <div className="w-3 h-3 bg-red-400 rounded-full animate-pulse"></div>
                 <span className="bg-gradient-to-r from-red-200 to-pink-200 bg-clip-text text-transparent">
-                  Listening...
+                  Recording... Press again to stop
                 </span>
               </p>
               <p className="text-sm text-slate-300/80">Whisper AI is capturing your voice</p>
@@ -312,38 +337,15 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           ) : (
             <div className="space-y-3">
               <p className="text-xl text-white font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
-                Tap to capture your thoughts
+                Tap to start recording
               </p>
-              <p className="text-sm text-slate-300/80">OpenAI Whisper will transform speech into actionable tasks</p>
+              <p className="text-sm text-slate-300/80">Press once to record, press again to process with OpenAI Whisper</p>
               <div className="hidden md:block">
                 <p className="text-xs text-purple-300/80">Or use the demo button for quick prototyping</p>
               </div>
             </div>
           )}
         </div>
-
-        {/* Transcript Preview */}
-        {transcript && !isProcessing && (
-          <Card className="w-full max-w-md shadow-2xl border-0 bg-slate-800/50 backdrop-blur-xl border border-cyan-500/20">
-            <CardContent className="p-6">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-2 h-2 bg-cyan-400 rounded-full mt-2 flex-shrink-0 animate-pulse"></div>
-                <p className="text-slate-200 leading-relaxed italic">"{transcript}"</p>
-              </div>
-              <div className="flex justify-end">
-                <Button 
-                  size="sm" 
-                  onClick={processTranscript}
-                  className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 shadow-lg hover:shadow-cyan-500/20 transition-all duration-300"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Save to Database
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Instructions */}
         <div className="text-center space-y-4 max-w-md">
@@ -356,6 +358,56 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Transcript Popup */}
+      {showTranscriptPopup && pendingTranscript && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg shadow-2xl border-0 bg-slate-800/90 backdrop-blur-xl border border-cyan-500/30 animate-in fade-in-0 zoom-in-95 duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-start gap-3 mb-6">
+                <div className="w-2 h-2 bg-cyan-400 rounded-full mt-2 flex-shrink-0 animate-pulse"></div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-white mb-3">Transcription Complete</h3>
+                  <p className="text-slate-200 leading-relaxed italic bg-slate-700/50 p-4 rounded-lg border border-slate-600/30">
+                    "{pendingTranscript}"
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-end gap-3">
+                <Button 
+                  variant="outline"
+                  size="sm" 
+                  onClick={handleCancelTranscript}
+                  disabled={isProcessing}
+                  className="flex items-center gap-2 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:border-red-400/40"
+                >
+                  <X className="w-4 h-4" />
+                  Cancel
+                </Button>
+                <Button 
+                  size="sm" 
+                  onClick={handleSaveTranscript}
+                  disabled={isProcessing}
+                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 shadow-lg hover:shadow-emerald-500/20 transition-all duration-300"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Zap className="w-4 h-4 animate-pulse" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Save to Database
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-400/50 to-transparent" />
     </div>
