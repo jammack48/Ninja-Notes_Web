@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check, Bug, Clock, Cpu } from 'lucide-react';
+import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check, Bug, Clock, Cpu, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +37,8 @@ interface TranscriptionResult {
     priority: 'low' | 'medium' | 'high';
   }>;
   improvements?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  potentialErrors?: string[];
   timings?: any;
   processingStages?: ProcessingTimings;
   tokenUsage?: TokenUsage;
@@ -58,6 +60,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState<ProcessingTimings>({});
   const [tokenMetrics, setTokenMetrics] = useState<TokenUsage>({});
+  const [lastAudioBlob, setLastAudioBlob] = useState<Blob | null>(null);
   const { toast } = useToast();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -128,6 +131,10 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         const mimeType = mediaRecorder.mimeType || 'audio/webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         addDebugLog(`Audio blob created: ${audioBlob.size} bytes, type: ${audioBlob.type}`);
+        
+        // Store the audio blob for potential retries
+        setLastAudioBlob(audioBlob);
+        
         await processAudio(audioBlob);
 
         stream.getTracks().forEach(track => {
@@ -180,6 +187,20 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         description: "Converting speech to text and analyzing with AI..."
       });
     }
+  };
+
+  const retryTranscription = async (forceAggressiveCorrection = false) => {
+    if (!lastAudioBlob) {
+      toast({
+        title: "No Audio Available",
+        description: "Please record again to retry transcription.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    addDebugLog(`Retrying transcription with aggressive correction: ${forceAggressiveCorrection}`);
+    await processAudio(lastAudioBlob, forceAggressiveCorrection);
   };
 
   const testEdgeFunction = async () => {
@@ -261,7 +282,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           priority: "low"
         }
       ],
-      improvements: "Improved grammar and clarity, extracted actionable tasks"
+      improvements: "Improved grammar and clarity, extracted actionable tasks",
+      confidence: "high",
+      potentialErrors: []
     });
     setShowTranscriptPopup(true);
     toast({
@@ -270,7 +293,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     });
   };
 
-  const processAudio = async (audioBlob: Blob) => {
+  const processAudio = async (audioBlob: Blob, forceAggressiveCorrection = false) => {
     setIsProcessing(true);
     processingStartTime.current = Date.now();
     setProcessingStage('Converting audio to base64...');
@@ -292,7 +315,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           
           const { data, error } = await supabase.functions.invoke('voice-to-text', {
             body: {
-              audio: base64Audio
+              audio: base64Audio,
+              forceAggressiveCorrection
             }
           });
 
@@ -330,6 +354,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               cleanedText: data.cleanedText,
               extractedTasks: data.extractedTasks || [],
               improvements: data.improvements,
+              confidence: data.confidence || 'medium',
+              potentialErrors: data.potentialErrors || [],
               timings: data.timings,
               processingStages: data.processingStages,
               tokenUsage: data.tokenUsage
@@ -341,9 +367,11 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             const totalTime = Date.now() - processingStartTime.current;
             addDebugLog(`Total client processing time: ${totalTime}ms`);
             
+            const confidenceEmoji = data.confidence === 'high' ? '✅' : data.confidence === 'low' ? '⚠️' : '📝';
+            
             toast({
-              title: "AI Processing Complete",
-              description: `Speech analyzed and cleaned up in ${data.processingStages?.totalTime || 'unknown time'}. Cost: ${data.tokenUsage?.estimatedCost || 'N/A'}`
+              title: `${confidenceEmoji} AI Processing Complete`,
+              description: `Speech analyzed (${data.confidence} confidence) in ${data.processingStages?.totalTime || 'unknown time'}. Cost: ${data.tokenUsage?.estimatedCost || 'N/A'}`
             });
           } else {
             addDebugLog(`No data in response: ${JSON.stringify(data)}`);
@@ -447,6 +475,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       setShowTranscriptPopup(false);
       setTranscript('');
       setPerformanceMetrics({});
+      setLastAudioBlob(null);
     } catch (error: any) {
       addDebugLog(`Error processing transcript: ${error.message}`);
       console.error('Error processing transcript:', error);
@@ -466,6 +495,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     setShowTranscriptPopup(false);
     setTranscript('');
     setPerformanceMetrics({});
+    setLastAudioBlob(null);
     toast({
       title: "Transcript Cancelled",
       description: "Your transcription has been discarded."
@@ -477,6 +507,14 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       stopRecording();
     } else {
       startRecording();
+    }
+  };
+
+  const getConfidenceColor = (confidence?: string) => {
+    switch (confidence) {
+      case 'high': return 'text-emerald-400 border-emerald-500/30 bg-emerald-900/20';
+      case 'low': return 'text-yellow-400 border-yellow-500/30 bg-yellow-900/20';
+      default: return 'text-cyan-400 border-cyan-500/30 bg-cyan-900/20';
     }
   };
 
@@ -700,7 +738,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         </div>
       </div>
 
-      {/* Enhanced Transcript Popup */}
+      {/* Enhanced Transcript Popup with Try Again functionality */}
       {showTranscriptPopup && transcriptionResult && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <Card className="w-full max-w-2xl shadow-2xl border-0 bg-slate-800/90 backdrop-blur-xl border border-cyan-500/30 animate-in fade-in-0 zoom-in-95 duration-300">
@@ -708,8 +746,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               <div className="flex items-start gap-3 mb-6">
                 <div className="w-2 h-2 bg-cyan-400 rounded-full mt-2 flex-shrink-0 animate-pulse"></div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                    AI Processing Complete
+                  <div className="flex items-center gap-2 mb-3">
+                    <h3 className="text-lg font-semibold text-white">AI Processing Complete</h3>
                     {transcriptionResult.processingStages?.totalTime && (
                       <Badge variant="outline" className="text-xs">
                         {transcriptionResult.processingStages.totalTime}
@@ -720,7 +758,27 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                         {transcriptionResult.tokenUsage.estimatedCost}
                       </Badge>
                     )}
-                  </h3>
+                    {transcriptionResult.confidence && (
+                      <Badge className={`text-xs ${getConfidenceColor(transcriptionResult.confidence)}`}>
+                        {transcriptionResult.confidence} confidence
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  {/* Potential Errors Warning */}
+                  {transcriptionResult.potentialErrors && transcriptionResult.potentialErrors.length > 0 && (
+                    <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="w-4 h-4 text-yellow-400" />
+                        <span className="text-sm text-yellow-300 font-medium">Potential transcription errors detected:</span>
+                      </div>
+                      <ul className="text-xs text-yellow-200 list-disc list-inside">
+                        {transcriptionResult.potentialErrors.map((error, index) => (
+                          <li key={index}>{error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   
                   {/* Before/After Comparison */}
                   {transcriptionResult.rawTranscription && transcriptionResult.cleanedText && (
@@ -800,35 +858,64 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                 </div>
               </div>
               
-              <div className="flex items-center justify-end gap-3">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleCancelTranscript} 
-                  disabled={isProcessing} 
-                  className="flex items-center gap-2 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:border-red-400/40"
-                >
-                  <X className="w-4 h-4" />
-                  Cancel
-                </Button>
-                <Button 
-                  size="sm" 
-                  onClick={handleSaveTranscript} 
-                  disabled={isProcessing} 
-                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 shadow-lg hover:shadow-emerald-500/20 transition-all duration-300"
-                >
-                  {isProcessing ? (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex gap-2">
+                  {lastAudioBlob && (
                     <>
-                      <Zap className="w-4 h-4 animate-pulse" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      Save {transcriptionResult.extractedTasks?.length || 1} Task{transcriptionResult.extractedTasks?.length !== 1 ? 's' : ''}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => retryTranscription(false)} 
+                        disabled={isProcessing} 
+                        className="flex items-center gap-2 border-blue-500/30 text-blue-300 hover:bg-blue-500/10 hover:border-blue-400/40"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        Try Again
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => retryTranscription(true)} 
+                        disabled={isProcessing} 
+                        className="flex items-center gap-2 border-orange-500/30 text-orange-300 hover:bg-orange-500/10 hover:border-orange-400/40"
+                      >
+                        <Zap className="w-4 h-4" />
+                        Force Fix
+                      </Button>
                     </>
                   )}
-                </Button>
+                </div>
+                
+                <div className="flex gap-3">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleCancelTranscript} 
+                    disabled={isProcessing} 
+                    className="flex items-center gap-2 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:border-red-400/40"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancel
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    onClick={handleSaveTranscript} 
+                    disabled={isProcessing} 
+                    className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 shadow-lg hover:shadow-emerald-500/20 transition-all duration-300"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Zap className="w-4 h-4 animate-pulse" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Save {transcriptionResult.extractedTasks?.length || 1} Task{transcriptionResult.extractedTasks?.length !== 1 ? 's' : ''}
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

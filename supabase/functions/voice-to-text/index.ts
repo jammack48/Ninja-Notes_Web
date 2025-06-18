@@ -77,7 +77,7 @@ serve(async (req) => {
   const timer = new ProcessingTimer();
 
   try {
-    const { audio } = await req.json();
+    const { audio, forceAggressiveCorrection = false } = await req.json();
     timer.markStage('request_parsed');
     
     if (!audio) {
@@ -140,7 +140,9 @@ serve(async (req) => {
     let analysisResult = {
       cleanedText: rawTranscription,
       extractedTasks: [],
-      improvements: "No improvements applied"
+      improvements: "No improvements applied",
+      confidence: "medium",
+      potentialErrors: []
     };
 
     // Initialize cost tracking
@@ -149,6 +151,70 @@ serve(async (req) => {
     let completionTokens = 0;
     let estimatedCost = 0;
     
+    // Enhanced ChatGPT prompt with aggressive error detection
+    const systemPrompt = forceAggressiveCorrection ? 
+      `You are an expert text processor that aggressively corrects speech-to-text transcription errors. The user has indicated the original transcription was likely wrong, so be very thorough in your corrections.
+
+CRITICAL: Look for these common speech-to-text errors:
+- Similar sounding words (Nigel → Nodule, Coal → Call, Beam → PM)
+- Missing articles, prepositions, or punctuation
+- Time expressions (12pm → 12 PM, at 12, etc.)
+- Names being misheard as common words
+- Phone numbers or dates being garbled
+
+Your job is to:
+1. Aggressively fix grammar, spelling, and transcription errors
+2. Correct obvious misheard words based on context
+3. Improve sentence structure and clarity while maintaining original intent
+4. Extract clear, actionable tasks if present
+5. Flag potential transcription errors you found
+6. Assign a confidence level: "high", "medium", or "low"
+
+Response format:
+{
+  "cleanedText": "The corrected version with aggressive fixes applied",
+  "extractedTasks": [
+    {
+      "title": "Task title",
+      "description": "Task description", 
+      "priority": "low|medium|high"
+    }
+  ],
+  "improvements": "Detailed description of corrections made",
+  "confidence": "high|medium|low",
+  "potentialErrors": ["List of potential transcription errors found"]
+}` :
+      `You are an expert text processor that cleans up speech-to-text transcriptions and extracts actionable tasks.
+
+IMPORTANT: Pay close attention to potential transcription errors. Look for:
+- Nonsensical word combinations that might be misheard speech
+- Names that sound like common words (Nigel → Nodule, etc.)
+- Time expressions that seem garbled (12pm, noon, etc.)
+- Context clues that suggest different words were intended
+
+Your job is to:
+1. Fix grammar, spelling, and obvious transcription errors
+2. Improve sentence structure and clarity
+3. Maintain the original meaning and intent
+4. Extract clear, actionable tasks if present
+5. Flag when you suspect transcription errors
+6. Assess confidence in the transcription accuracy
+
+Response format:
+{
+  "cleanedText": "The improved, grammatically correct version",
+  "extractedTasks": [
+    {
+      "title": "Task title",
+      "description": "Task description",
+      "priority": "low|medium|high"
+    }
+  ],
+  "improvements": "Description of what was improved",
+  "confidence": "high|medium|low - your confidence in transcription accuracy",
+  "potentialErrors": ["List any words/phrases that seem like transcription errors"]
+}`;
+
     const chatgptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -160,31 +226,11 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: `You are an expert text processor that cleans up speech-to-text transcriptions and extracts actionable tasks. 
-
-Your job is to:
-1. Fix grammar, spelling, and punctuation errors
-2. Improve sentence structure and clarity
-3. Maintain the original meaning and intent
-4. Extract clear, actionable tasks if present
-5. Return a JSON response with both cleaned text and extracted tasks
-
-Response format:
-{
-  "cleanedText": "The improved, grammatically correct version of the text",
-  "extractedTasks": [
-    {
-      "title": "Task title",
-      "description": "Task description",
-      "priority": "low|medium|high"
-    }
-  ],
-  "improvements": "Brief description of what was improved"
-}`
+            content: systemPrompt
           },
           {
             role: 'user',
-            content: `Please clean up and analyze this speech-to-text transcription: "${rawTranscription}"`
+            content: `Please analyze and clean up this speech-to-text transcription: "${rawTranscription}"`
           }
         ],
         temperature: 0.3,
@@ -198,7 +244,6 @@ Response format:
     if (!chatgptResponse.ok) {
       const errorText = await chatgptResponse.text();
       console.error('❌ ChatGPT API error response:', errorText);
-      // Fallback already set above
       console.log('⚠️ Falling back to raw Whisper transcription');
       timer.markStage('fallback_applied');
     } else {
@@ -221,7 +266,11 @@ Response format:
       
       try {
         const parsedResult = JSON.parse(chatgptResult.choices[0].message.content);
-        analysisResult = parsedResult;
+        analysisResult = {
+          ...parsedResult,
+          confidence: parsedResult.confidence || "medium",
+          potentialErrors: parsedResult.potentialErrors || []
+        };
         console.log('✅ ChatGPT analysis successful:', analysisResult);
       } catch (parseError) {
         console.error('❌ Failed to parse ChatGPT response, using fallback');
@@ -278,6 +327,8 @@ Response format:
         cleanedText: analysisResult.cleanedText,
         extractedTasks: analysisResult.extractedTasks,
         improvements: analysisResult.improvements,
+        confidence: analysisResult.confidence,
+        potentialErrors: analysisResult.potentialErrors,
         id: data?.id || null,
         success: true,
         timings,
