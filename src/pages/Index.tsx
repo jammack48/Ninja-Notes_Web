@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { VoiceCapture } from '@/components/VoiceCapture';
 import { TaskList } from '@/components/TaskList';
@@ -156,7 +155,7 @@ const Index = () => {
             onDeleteTask={deleteTask}
             onSwitchToMic={() => setCurrentScreen('mic')}
           />
-        </TaskList>
+        </TabsContent>
       </Tabs>
     </div>
   );
