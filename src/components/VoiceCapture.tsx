@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,11 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Task } from '@/types/Task';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+
 interface VoiceCaptureProps {
   onTaskCreated: (task: Task) => void;
   onSwitchToTasks: () => void;
   taskCount: number;
 }
+
 export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   onTaskCreated,
   onSwitchToTasks,
@@ -21,36 +24,49 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [showTranscriptPopup, setShowTranscriptPopup] = useState(false);
   const [pendingTranscript, setPendingTranscript] = useState('');
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
   const startRecording = async () => {
+    console.log('Starting recording...');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true
       });
+      
+      console.log('Microphone access granted');
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+
       mediaRecorder.ondataavailable = event => {
+        console.log('Audio data available:', event.data.size);
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
+
       mediaRecorder.onstop = async () => {
+        console.log('Recording stopped, processing audio...');
         const audioBlob = new Blob(audioChunksRef.current, {
           type: 'audio/webm'
         });
+        console.log('Audio blob created:', audioBlob.size, 'bytes');
         await processAudio(audioBlob);
 
         // Stop all tracks
         stream.getTracks().forEach(track => track.stop());
       };
+
       mediaRecorder.start();
       setIsRecording(true);
       setTranscript('');
+      
+      toast({
+        title: "Recording Started",
+        description: "Speak now. Press the button again to stop and process."
+      });
     } catch (error) {
       console.error('Error starting recording:', error);
       toast({
@@ -60,13 +76,22 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       });
     }
   };
+
   const stopRecording = () => {
+    console.log('Stopping recording...');
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      
+      toast({
+        title: "Processing Recording",
+        description: "Converting speech to text using OpenAI Whisper..."
+      });
     }
   };
+
   const simulateVoiceInput = () => {
+    console.log('Simulating voice input...');
     const demoMessage = "Call Ryan tomorrow and buy paint for bedroom";
     setPendingTranscript(demoMessage);
     setShowTranscriptPopup(true);
@@ -75,96 +100,128 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       description: "Voice input simulated for prototyping purposes"
     });
   };
+
   const processAudio = async (audioBlob: Blob) => {
     setIsProcessing(true);
+    console.log('Processing audio blob of size:', audioBlob.size);
+    
     try {
       // Convert audio blob to base64
       const reader = new FileReader();
       reader.readAsDataURL(audioBlob);
+      
       reader.onloadend = async () => {
-        const base64Audio = (reader.result as string).split(',')[1];
+        try {
+          const base64Audio = (reader.result as string).split(',')[1];
+          console.log('Base64 audio length:', base64Audio.length);
 
-        // Call the voice-to-text edge function
-        const {
-          data,
-          error
-        } = await supabase.functions.invoke('voice-to-text', {
-          body: {
-            audio: base64Audio
-          }
-        });
-        if (error) {
-          throw error;
-        }
-        if (data?.text) {
-          setPendingTranscript(data.text);
-          setShowTranscriptPopup(true);
-          toast({
-            title: "Transcription Complete",
-            description: "Your voice has been converted to text successfully!"
+          console.log('Calling voice-to-text edge function...');
+          
+          // Call the voice-to-text edge function
+          const { data, error } = await supabase.functions.invoke('voice-to-text', {
+            body: {
+              audio: base64Audio
+            }
           });
-        } else {
-          throw new Error('No transcription received');
+
+          console.log('Edge function response:', { data, error });
+
+          if (error) {
+            console.error('Edge function error:', error);
+            throw new Error(`Edge function error: ${error.message || JSON.stringify(error)}`);
+          }
+
+          if (data?.text) {
+            console.log('Transcription received:', data.text);
+            setPendingTranscript(data.text);
+            setShowTranscriptPopup(true);
+            toast({
+              title: "Transcription Complete",
+              description: "Your voice has been converted to text successfully!"
+            });
+          } else {
+            console.error('No transcription text in response:', data);
+            throw new Error('No transcription received from the service');
+          }
+        } catch (innerError) {
+          console.error('Error in reader.onloadend:', innerError);
+          throw innerError;
         }
       };
+
+      reader.onerror = (error) => {
+        console.error('FileReader error:', error);
+        throw new Error('Failed to read audio file');
+      };
+
     } catch (error) {
       console.error('Error processing audio:', error);
       toast({
         title: "Transcription Error",
-        description: "Failed to convert speech to text. Please try again.",
+        description: `Failed to convert speech to text: ${error.message}`,
         variant: "destructive"
       });
     } finally {
       setIsProcessing(false);
     }
   };
+
   const handleSaveTranscript = async () => {
     setIsProcessing(true);
+    console.log('Saving transcript:', pendingTranscript);
+    
     try {
       // Mock AI processing - in a real app, this would call an AI service
-      const mockTasks = [{
-        title: "Call Ryan about meeting",
-        description: "Follow up on the meeting discussion",
-        priority: 'medium' as const,
-        completed: false
-      }, {
-        title: "Buy paint for bedroom",
-        description: "Purchase paint for bedroom decoration",
-        priority: 'low' as const,
-        completed: false
-      }];
+      const mockTasks = [
+        {
+          title: "Call Ryan about meeting",
+          description: "Follow up on the meeting discussion",
+          priority: 'medium' as const,
+          completed: false
+        },
+        {
+          title: "Buy paint for bedroom",
+          description: "Purchase paint for bedroom decoration",
+          priority: 'low' as const,
+          completed: false
+        }
+      ];
+
       console.log('Saving tasks to Supabase:', mockTasks);
 
       // Save each task to Supabase
       for (const taskData of mockTasks) {
-        const {
-          data,
-          error
-        } = await supabase.from('tasks').insert([taskData]).select().single();
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert([taskData])
+          .select()
+          .single();
+
         if (error) {
           console.error('Error saving task:', error);
           throw error;
         }
+
         console.log('Task saved successfully:', data);
 
-        // after your supabase insert/select…
-      const rawPriority = data.priority;
-      if (!['low','medium','high'].includes(rawPriority)) {
-        throw new Error(`Unexpected priority value "${rawPriority}" from database`);
-      }
-      
-      const newTask: Task = {
-        id: data.id,
-        title: data.title,
-        description: data.description,
-        priority: rawPriority as Task['priority'],
-        dueDate: data.due_date,
-        completed: data.completed,
-        createdAt: data.created_at
-      };
+        const rawPriority = data.priority;
+        if (!['low', 'medium', 'high'].includes(rawPriority)) {
+          throw new Error(`Unexpected priority value "${rawPriority}" from database`);
+        }
+
+        const newTask: Task = {
+          id: data.id,
+          title: data.title,
+          description: data.description,
+          priority: rawPriority as Task['priority'],
+          dueDate: data.due_date,
+          completed: data.completed,
+          createdAt: data.created_at
+        };
 
         onTaskCreated(newTask);
       }
+
       toast({
         title: "Tasks saved successfully!",
         description: `${mockTasks.length} tasks have been processed and saved to your database.`
@@ -185,7 +242,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       setIsProcessing(false);
     }
   };
+
   const handleCancelTranscript = () => {
+    console.log('Cancelling transcript');
     setPendingTranscript('');
     setShowTranscriptPopup(false);
     setTranscript('');
@@ -194,6 +253,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       description: "Your transcription has been discarded."
     });
   };
+
   const handleRecordingToggle = () => {
     if (isRecording) {
       stopRecording();
@@ -201,7 +261,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       startRecording();
     }
   };
-  return <div className="h-full flex flex-col relative overflow-hidden bg-gradient-to-br from-slate-900/90 via-indigo-950/90 to-slate-900/90">
+
+  return (
+    <div className="h-full flex flex-col relative overflow-hidden bg-gradient-to-br from-slate-900/90 via-indigo-950/90 to-slate-900/90">
       {/* Futuristic background pattern */}
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent animate-pulse" />
@@ -234,7 +296,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             <p className="text-cyan-200/80 font-medium">Capture thoughts instantly</p>
           </div>
         </div>
-        
       </div>
 
       {/* Main Content */}
@@ -243,7 +304,12 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         <div className="flex items-center gap-8">
           {/* Demo Button (Desktop only) */}
           <div className="hidden md:block">
-            <Button size="lg" onClick={simulateVoiceInput} disabled={isProcessing || isRecording} className="w-20 h-20 rounded-full transition-all duration-500 shadow-2xl border-2 bg-gradient-to-br from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 border-purple-400/50 shadow-purple-500/30 group relative overflow-hidden">
+            <Button 
+              size="lg" 
+              onClick={simulateVoiceInput} 
+              disabled={isProcessing || isRecording} 
+              className="w-20 h-20 rounded-full transition-all duration-500 shadow-2xl border-2 bg-gradient-to-br from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 border-purple-400/50 shadow-purple-500/30 group relative overflow-hidden"
+            >
               <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
               <Play className="w-8 h-8 text-white drop-shadow-lg relative z-10" />
             </Button>
@@ -255,10 +321,23 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             <div className={`absolute -inset-20 rounded-full transition-all duration-500 ${isRecording ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 animate-pulse' : ''}`}></div>
             <div className={`absolute -inset-12 rounded-full transition-all duration-300 ${isRecording ? 'bg-gradient-to-r from-cyan-400/30 to-purple-400/30 animate-ping' : ''}`}></div>
             
-            <Button size="lg" onClick={handleRecordingToggle} disabled={isProcessing} className={`w-40 h-40 rounded-full transition-all duration-500 shadow-2xl border-2 relative overflow-hidden ${isRecording ? 'bg-gradient-to-br from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 border-red-400/50 shadow-red-500/30' : 'bg-gradient-to-br from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 border-cyan-400/50 shadow-cyan-500/30'} group`}>
+            <Button 
+              size="lg" 
+              onClick={handleRecordingToggle} 
+              disabled={isProcessing} 
+              className={`w-40 h-40 rounded-full transition-all duration-500 shadow-2xl border-2 relative overflow-hidden ${
+                isRecording 
+                  ? 'bg-gradient-to-br from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 border-red-400/50 shadow-red-500/30' 
+                  : 'bg-gradient-to-br from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 border-cyan-400/50 shadow-cyan-500/30'
+              } group`}
+            >
               <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
               
-              {isRecording ? <MicOff className="w-16 h-16 text-white drop-shadow-lg relative z-10" /> : <Mic className="w-16 h-16 text-white drop-shadow-lg relative z-10" />}
+              {isRecording ? (
+                <MicOff className="w-16 h-16 text-white drop-shadow-lg relative z-10" />
+              ) : (
+                <Mic className="w-16 h-16 text-white drop-shadow-lg relative z-10" />
+              )}
               
               <div className={`absolute inset-0 rounded-full transition-all duration-300 ${isRecording ? 'animate-spin' : ''}`}>
                 <div className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
@@ -269,12 +348,15 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
         {/* Status Text */}
         <div className="text-center">
-          {isProcessing ? <div className="flex items-center gap-3 text-xl text-cyan-100">
+          {isProcessing ? (
+            <div className="flex items-center gap-3 text-xl text-cyan-100">
               <Zap className="w-6 h-6 text-cyan-400 animate-pulse" />
               <span className="font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
                 AI processing voice to text...
               </span>
-            </div> : isRecording ? <div className="space-y-3">
+            </div>
+          ) : isRecording ? (
+            <div className="space-y-3">
               <p className="text-xl text-red-300 font-semibold flex items-center justify-center gap-2">
                 <div className="w-3 h-3 bg-red-400 rounded-full animate-pulse"></div>
                 <span className="bg-gradient-to-r from-red-200 to-pink-200 bg-clip-text text-transparent">
@@ -282,7 +364,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                 </span>
               </p>
               <p className="text-sm text-slate-300/80">Whisper AI is capturing your voice</p>
-            </div> : <div className="space-y-3">
+            </div>
+          ) : (
+            <div className="space-y-3">
               <p className="text-xl text-white font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
                 Tap to start recording
               </p>
@@ -290,7 +374,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               <div className="hidden md:block">
                 <p className="text-xs text-purple-300/80">Or use the demo button for quick prototyping</p>
               </div>
-            </div>}
+            </div>
+          )}
         </div>
 
         {/* Instructions */}
@@ -300,13 +385,13 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           </p>
           <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
             <ArrowRight className="w-3 h-3" />
-            
           </div>
         </div>
       </div>
 
       {/* Transcript Popup */}
-      {showTranscriptPopup && pendingTranscript && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      {showTranscriptPopup && pendingTranscript && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <Card className="w-full max-w-lg shadow-2xl border-0 bg-slate-800/90 backdrop-blur-xl border border-cyan-500/30 animate-in fade-in-0 zoom-in-95 duration-300">
             <CardContent className="p-6">
               <div className="flex items-start gap-3 mb-6">
@@ -320,24 +405,41 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               </div>
               
               <div className="flex items-center justify-end gap-3">
-                <Button variant="outline" size="sm" onClick={handleCancelTranscript} disabled={isProcessing} className="flex items-center gap-2 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:border-red-400/40">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleCancelTranscript} 
+                  disabled={isProcessing} 
+                  className="flex items-center gap-2 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:border-red-400/40"
+                >
                   <X className="w-4 h-4" />
                   Cancel
                 </Button>
-                <Button size="sm" onClick={handleSaveTranscript} disabled={isProcessing} className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 shadow-lg hover:shadow-emerald-500/20 transition-all duration-300">
-                  {isProcessing ? <>
+                <Button 
+                  size="sm" 
+                  onClick={handleSaveTranscript} 
+                  disabled={isProcessing} 
+                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 shadow-lg hover:shadow-emerald-500/20 transition-all duration-300"
+                >
+                  {isProcessing ? (
+                    <>
                       <Zap className="w-4 h-4 animate-pulse" />
                       Processing...
-                    </> : <>
+                    </>
+                  ) : (
+                    <>
                       <Check className="w-4 h-4" />
                       Save to Database
-                    </>}
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
           </Card>
-        </div>}
+        </div>
+      )}
 
       <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-400/50 to-transparent" />
-    </div>;
+    </div>
+  );
 };

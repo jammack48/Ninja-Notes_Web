@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { VoiceCapture } from '@/components/VoiceCapture';
 import { TaskList } from '@/components/TaskList';
@@ -7,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mic, List } from 'lucide-react';
 
 const Index = () => {
+  // Initialize lock screen to show first on published sites
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<'mic' | 'tasks'>('mic');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -16,20 +18,24 @@ const Index = () => {
   const minSwipeDistance = 50;
 
   const addTask = (task: Task) => {
+    console.log('Adding new task:', task);
     setTasks(prev => [task, ...prev]);
   };
 
   const toggleTask = (id: string) => {
+    console.log('Toggling task:', id);
     setTasks(prev => prev.map(task => 
       task.id === id ? { ...task, completed: !task.completed } : task
     ));
   };
 
   const deleteTask = (id: string) => {
+    console.log('Deleting task:', id);
     setTasks(prev => prev.filter(task => task.id !== id));
   };
 
   const handleUnlock = () => {
+    console.log('Unlocking app');
     setIsUnlocked(true);
   };
 
@@ -70,8 +76,11 @@ const Index = () => {
 
   // Show lock screen if not unlocked
   if (!isUnlocked) {
+    console.log('Showing lock screen');
     return <LockScreen onUnlock={handleUnlock} />;
   }
+
+  console.log('App unlocked, showing main interface');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 overflow-hidden relative">
@@ -81,18 +90,18 @@ const Index = () => {
       
       {/* Unified Tab Interface for both Mobile and Desktop */}
       <Tabs value={currentScreen} onValueChange={(value) => setCurrentScreen(value as 'mic' | 'tasks')} className="h-screen">
-        <div className="bg-slate-800/30 backdrop-blur-xl border-b border-cyan-500/20 p-4">
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 bg-slate-800/50 border border-cyan-500/30">
+        <div className="bg-slate-800/50 backdrop-blur-xl border-b border-cyan-500/30 p-4 relative z-50">
+          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 bg-slate-800/70 border border-cyan-500/40 shadow-lg">
             <TabsTrigger 
               value="mic" 
-              className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-100 text-slate-300 flex items-center gap-2"
+              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-2 font-medium transition-all duration-200"
             >
               <Mic className="w-4 h-4" />
               Voice Input
             </TabsTrigger>
             <TabsTrigger 
               value="tasks" 
-              className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-100 text-slate-300 flex items-center gap-2"
+              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-2 font-medium transition-all duration-200"
             >
               <List className="w-4 h-4" />
               Messages ({tasks.length})
@@ -102,6 +111,7 @@ const Index = () => {
           {/* Task Whisper title below navigation */}
           <div className="text-center mt-4">
             <h1 className="text-2xl font-bold text-white tracking-tight">Task Whisper</h1>
+            <div className="w-16 h-0.5 bg-gradient-to-r from-cyan-400 to-purple-400 mx-auto mt-2"></div>
           </div>
         </div>
         

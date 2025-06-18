@@ -10,6 +10,7 @@ const corsHeaders = {
 
 // Process base64 in chunks to prevent memory issues
 function processBase64Chunks(base64String: string, chunkSize = 32768) {
+  console.log(`Processing base64 string of length: ${base64String.length}`);
   const chunks: Uint8Array[] = [];
   let position = 0;
   
@@ -35,6 +36,7 @@ function processBase64Chunks(base64String: string, chunkSize = 32768) {
     offset += chunk.length;
   }
 
+  console.log(`Processed audio binary of size: ${result.length} bytes`);
   return result;
 }
 
@@ -43,14 +45,26 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  console.log('Voice-to-text function called');
+
   try {
     const { audio } = await req.json();
     
     if (!audio) {
+      console.error('No audio data provided in request');
       throw new Error('No audio data provided');
     }
 
-    console.log('Processing audio transcription...');
+    console.log('Audio data received, length:', audio.length);
+
+    // Check if OpenAI API key is available
+    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiKey) {
+      console.error('OPENAI_API_KEY environment variable not set');
+      throw new Error('OpenAI API key not configured. Please check your Supabase Edge Function secrets.');
+    }
+
+    console.log('OpenAI API key found, processing audio...');
 
     // Process audio in chunks
     const binaryAudio = processBase64Chunks(audio);
@@ -61,19 +75,23 @@ serve(async (req) => {
     formData.append('file', blob, 'audio.webm');
     formData.append('model', 'whisper-1');
 
+    console.log('Sending request to OpenAI Whisper API...');
+
     // Send to OpenAI Whisper API
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+        'Authorization': `Bearer ${openaiKey}`,
       },
       body: formData,
     });
 
+    console.log('OpenAI API response status:', response.status);
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('OpenAI API error:', errorText);
-      throw new Error(`OpenAI API error: ${errorText}`);
+      console.error('OpenAI API error response:', errorText);
+      throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
     }
 
     const result = await response.json();
@@ -82,12 +100,18 @@ serve(async (req) => {
     console.log('Transcription successful:', transcribedText);
 
     // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Supabase configuration missing');
+      throw new Error('Supabase configuration not found');
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Save transcription to database
+    console.log('Saving transcription to database...');
     const { data, error } = await supabase
       .from('transcriptions')
       .insert([{
@@ -100,15 +124,17 @@ serve(async (req) => {
 
     if (error) {
       console.error('Database error:', error);
-      throw new Error(`Database error: ${error.message}`);
+      // Don't throw here - transcription was successful, database save is optional
+      console.log('Continuing despite database error...');
+    } else {
+      console.log('Transcription saved to database:', data);
     }
-
-    console.log('Transcription saved to database:', data);
 
     return new Response(
       JSON.stringify({ 
         text: transcribedText,
-        id: data.id
+        id: data?.id || null,
+        success: true
       }),
       { 
         headers: { 
@@ -120,8 +146,23 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in voice-to-text function:', error);
+    
+    // Provide more specific error messages
+    let errorMessage = error.message;
+    if (error.message.includes('API key')) {
+      errorMessage = 'OpenAI API key not configured. Please check your Supabase Edge Function secrets.';
+    } else if (error.message.includes('OpenAI API error')) {
+      errorMessage = 'OpenAI service error. Please try again later.';
+    } else if (error.message.includes('No audio data')) {
+      errorMessage = 'No audio data received. Please try recording again.';
+    }
+
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: errorMessage,
+        success: false,
+        details: error.message 
+      }),
       {
         status: 500,
         headers: { 
