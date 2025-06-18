@@ -23,11 +23,11 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-100 overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 overflow-hidden">
       <div className="h-screen relative">
         {/* Swipeable Container */}
         <div 
-          className={`flex h-full transition-transform duration-300 ease-out ${
+          className={`flex h-full transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             currentScreen === 'mic' ? 'translate-x-0' : '-translate-x-full'
           }`}
           style={{ width: '200%' }}
