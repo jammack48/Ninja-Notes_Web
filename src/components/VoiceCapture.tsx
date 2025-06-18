@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Mic, MicOff, ArrowRight, List, Sparkles, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,19 +22,89 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-  const startRecording = () => {
-    setIsRecording(true);
-    setTranscript('');
-    setTimeout(() => {
-      setTranscript("Call Ryan later about the meeting and don't forget to buy paint for the bedroom");
-    }, 2000);
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await processAudio(audioBlob);
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setTranscript('');
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast({
+        title: "Recording Error",
+        description: "Could not access microphone. Please check permissions.",
+        variant: "destructive",
+      });
+    }
   };
 
   const stopRecording = () => {
-    setIsRecording(false);
-    if (transcript) {
-      processTranscript();
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const processAudio = async (audioBlob: Blob) => {
+    setIsProcessing(true);
+    
+    try {
+      // Convert audio blob to base64
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      
+      reader.onloadend = async () => {
+        const base64Audio = (reader.result as string).split(',')[1];
+        
+        // Call the voice-to-text edge function
+        const { data, error } = await supabase.functions.invoke('voice-to-text', {
+          body: { audio: base64Audio }
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        if (data?.text) {
+          setTranscript(data.text);
+          toast({
+            title: "Transcription Complete",
+            description: "Your voice has been converted to text successfully!",
+          });
+        } else {
+          throw new Error('No transcription received');
+        }
+      };
+    } catch (error) {
+      console.error('Error processing audio:', error);
+      toast({
+        title: "Transcription Error",
+        description: "Failed to convert speech to text. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -180,7 +250,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             <div className="flex items-center gap-3 text-xl text-cyan-100">
               <Zap className="w-6 h-6 text-cyan-400 animate-pulse" />
               <span className="font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
-                AI processing and saving to database...
+                AI processing voice to text...
               </span>
             </div>
           ) : isRecording ? (
@@ -191,14 +261,14 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                   Listening...
                 </span>
               </p>
-              <p className="text-sm text-slate-300/80">Neural networks are capturing your voice</p>
+              <p className="text-sm text-slate-300/80">Whisper AI is capturing your voice</p>
             </div>
           ) : (
             <div className="space-y-3">
               <p className="text-xl text-white font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
                 Tap to capture your thoughts
               </p>
-              <p className="text-sm text-slate-300/80">Advanced AI will transform speech into actionable tasks</p>
+              <p className="text-sm text-slate-300/80">OpenAI Whisper will transform speech into actionable tasks</p>
             </div>
           )}
         </div>
@@ -229,11 +299,11 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         {/* Instructions */}
         <div className="text-center space-y-4 max-w-md">
           <p className="text-slate-300/90 font-medium">
-            Try: <span className="text-cyan-300">"Call Ryan tomorrow"</span> or <span className="text-purple-300">"Buy groceries this weekend"</span>
+            Speak naturally: <span className="text-cyan-300">"Call Ryan tomorrow"</span> or <span className="text-purple-300">"Buy groceries this weekend"</span>
           </p>
           <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
             <ArrowRight className="w-3 h-3" />
-            <span>Swipe right to view your neural task network</span>
+            <span>Powered by OpenAI Whisper for accurate transcription</span>
           </div>
         </div>
       </div>
