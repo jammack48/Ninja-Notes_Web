@@ -1,5 +1,6 @@
+
 import React, { useState, useRef } from 'react';
-import { Mic, MicOff, ArrowRight, List, Sparkles, Zap } from 'lucide-react';
+import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -64,6 +65,15 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
+  };
+
+  const simulateVoiceInput = () => {
+    const demoMessage = "Call Ryan tomorrow and buy paint for bedroom";
+    setTranscript(demoMessage);
+    toast({
+      title: "Demo Message Simulated",
+      description: "Voice input simulated for prototyping purposes",
+    });
   };
 
   const processAudio = async (audioBlob: Blob) => {
@@ -211,38 +221,56 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-10 relative z-10">
-        <div className="relative">
-          <div className={`absolute -inset-20 rounded-full transition-all duration-500 ${
-            isRecording ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 animate-pulse' : ''
-          }`}></div>
-          <div className={`absolute -inset-12 rounded-full transition-all duration-300 ${
-            isRecording ? 'bg-gradient-to-r from-cyan-400/30 to-purple-400/30 animate-ping' : ''
-          }`}></div>
-          
-          <Button
-            size="lg"
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={isProcessing}
-            className={`w-40 h-40 rounded-full transition-all duration-500 shadow-2xl border-2 relative overflow-hidden ${
-              isRecording 
-                ? 'bg-gradient-to-br from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 border-red-400/50 shadow-red-500/30' 
-                : 'bg-gradient-to-br from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 border-cyan-400/50 shadow-cyan-500/30'
-            } group`}
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+        {/* Microphone and Demo Button Container */}
+        <div className="flex items-center gap-8">
+          {/* Demo Button (Desktop only) */}
+          <div className="hidden md:block">
+            <Button
+              size="lg"
+              onClick={simulateVoiceInput}
+              disabled={isProcessing || isRecording}
+              className="w-20 h-20 rounded-full transition-all duration-500 shadow-2xl border-2 bg-gradient-to-br from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 border-purple-400/50 shadow-purple-500/30 group relative overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <Play className="w-8 h-8 text-white drop-shadow-lg relative z-10" />
+            </Button>
+            <p className="text-xs text-purple-300 text-center mt-2 font-medium">Demo</p>
+          </div>
+
+          {/* Main Microphone Button */}
+          <div className="relative">
+            <div className={`absolute -inset-20 rounded-full transition-all duration-500 ${
+              isRecording ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 animate-pulse' : ''
+            }`}></div>
+            <div className={`absolute -inset-12 rounded-full transition-all duration-300 ${
+              isRecording ? 'bg-gradient-to-r from-cyan-400/30 to-purple-400/30 animate-ping' : ''
+            }`}></div>
             
-            {isRecording ? (
-              <MicOff className="w-16 h-16 text-white drop-shadow-lg relative z-10" />
-            ) : (
-              <Mic className="w-16 h-16 text-white drop-shadow-lg relative z-10" />
-            )}
-            
-            <div className={`absolute inset-0 rounded-full transition-all duration-300 ${
-              isRecording ? 'animate-spin' : ''
-            }`}>
-              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
-            </div>
-          </Button>
+            <Button
+              size="lg"
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isProcessing}
+              className={`w-40 h-40 rounded-full transition-all duration-500 shadow-2xl border-2 relative overflow-hidden ${
+                isRecording 
+                  ? 'bg-gradient-to-br from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 border-red-400/50 shadow-red-500/30' 
+                  : 'bg-gradient-to-br from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 border-cyan-400/50 shadow-cyan-500/30'
+              } group`}
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              
+              {isRecording ? (
+                <MicOff className="w-16 h-16 text-white drop-shadow-lg relative z-10" />
+              ) : (
+                <Mic className="w-16 h-16 text-white drop-shadow-lg relative z-10" />
+              )}
+              
+              <div className={`absolute inset-0 rounded-full transition-all duration-300 ${
+                isRecording ? 'animate-spin' : ''
+              }`}>
+                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
+              </div>
+            </Button>
+          </div>
         </div>
 
         <div className="text-center">
@@ -269,6 +297,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                 Tap to capture your thoughts
               </p>
               <p className="text-sm text-slate-300/80">OpenAI Whisper will transform speech into actionable tasks</p>
+              <div className="hidden md:block">
+                <p className="text-xs text-purple-300/80">Or use the demo button for quick prototyping</p>
+              </div>
             </div>
           )}
         </div>
