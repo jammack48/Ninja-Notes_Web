@@ -112,55 +112,67 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
-  // Set up real-time subscription
+  // Set up real-time subscription with better error handling
   useEffect(() => {
-    const fetchData = async () => {
+    let tasksChannel: any;
+    let completedTasksChannel: any;
+
+    const setupSubscriptions = async () => {
+      // Initial data fetch
       await Promise.all([fetchTasks(), fetchCompletedTasks()]);
       setLoading(false);
+
+      // Subscribe to real-time changes for tasks table
+      tasksChannel = supabase
+        .channel('public:tasks')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tasks'
+          },
+          (payload) => {
+            console.log('Tasks real-time update received:', payload);
+            // Force immediate refetch to ensure UI is in sync
+            fetchTasks();
+          }
+        )
+        .subscribe((status) => {
+          console.log('Tasks subscription status:', status);
+        });
+
+      // Subscribe to real-time changes for completed_tasks table
+      completedTasksChannel = supabase
+        .channel('public:completed_tasks')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'completed_tasks'
+          },
+          (payload) => {
+            console.log('Completed tasks real-time update received:', payload);
+            // Force immediate refetch to ensure UI is in sync
+            fetchCompletedTasks();
+          }
+        )
+        .subscribe((status) => {
+          console.log('Completed tasks subscription status:', status);
+        });
     };
 
-    fetchData();
-
-    // Subscribe to real-time changes for tasks
-    const tasksChannel = supabase
-      .channel('tasks-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tasks'
-        },
-        (payload) => {
-          console.log('Tasks real-time update received:', payload);
-          // Immediately refetch tasks when any change occurs
-          fetchTasks();
-        }
-      )
-      .subscribe();
-
-    // Subscribe to real-time changes for completed tasks
-    const completedTasksChannel = supabase
-      .channel('completed-tasks-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'completed_tasks'
-        },
-        (payload) => {
-          console.log('Completed tasks real-time update received:', payload);
-          // Immediately refetch completed tasks when any change occurs
-          fetchCompletedTasks();
-        }
-      )
-      .subscribe();
+    setupSubscriptions();
 
     return () => {
       console.log('Cleaning up real-time subscriptions');
-      supabase.removeChannel(tasksChannel);
-      supabase.removeChannel(completedTasksChannel);
+      if (tasksChannel) {
+        supabase.removeChannel(tasksChannel);
+      }
+      if (completedTasksChannel) {
+        supabase.removeChannel(completedTasksChannel);
+      }
     };
   }, []);
 
@@ -168,6 +180,7 @@ export const TaskList: React.FC<TaskListProps> = ({
   const allTasks = dbTasks;
   const incompleteTasks = allTasks.filter(task => !task.completed);
 
+  // Get priority color based on task priority
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'high':
@@ -181,6 +194,7 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
+  // Handle toggling a task's completion status
   const handleToggleTask = async (taskId: string) => {
     try {
       const task = allTasks.find(t => t.id === taskId);
@@ -206,6 +220,7 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
+  // Handle completing a task
   const handleCompleteTask = async (taskId: string) => {
     try {
       const task = allTasks.find(t => t.id === taskId);
@@ -253,6 +268,7 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
+  // Handle deleting a task
   const handleDeleteTask = async (taskId: string) => {
     try {
       console.log('Deleting task:', taskId);
@@ -277,6 +293,7 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
+  // Task card component
   const TaskCard = ({ task }: { task: Task }) => (
     <Card className={`transition-all duration-500 border-0 shadow-lg hover:shadow-2xl bg-slate-800/40 backdrop-blur-xl border border-cyan-500/20 hover:border-cyan-400/40 group ${task.completed ? 'opacity-60' : ''}`}>
       <CardContent className="p-5">
@@ -336,6 +353,7 @@ export const TaskList: React.FC<TaskListProps> = ({
     </Card>
   );
 
+  // Completed task card component
   const CompletedTaskCard = ({ task }: { task: CompletedTask }) => (
     <Card className="transition-all duration-500 border-0 shadow-lg bg-slate-800/20 backdrop-blur-xl border border-emerald-500/20 opacity-60">
       <CardContent className="p-5">
@@ -369,6 +387,7 @@ export const TaskList: React.FC<TaskListProps> = ({
     </Card>
   );
 
+  // Render the task list
   if (loading) {
     return (
       <div className="h-full flex flex-col bg-gradient-to-br from-slate-900/90 via-indigo-950/90 to-slate-900/90 relative">
