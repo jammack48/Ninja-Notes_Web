@@ -133,6 +133,7 @@ export const TaskList: React.FC<TaskListProps> = ({
         },
         (payload) => {
           console.log('Tasks real-time update received:', payload);
+          // Immediately refetch tasks when any change occurs
           fetchTasks();
         }
       )
@@ -150,6 +151,7 @@ export const TaskList: React.FC<TaskListProps> = ({
         },
         (payload) => {
           console.log('Completed tasks real-time update received:', payload);
+          // Immediately refetch completed tasks when any change occurs
           fetchCompletedTasks();
         }
       )
@@ -253,6 +255,7 @@ export const TaskList: React.FC<TaskListProps> = ({
 
   const handleDeleteTask = async (taskId: string) => {
     try {
+      console.log('Deleting task:', taskId);
       const { error } = await supabase.from('tasks').delete().eq('id', taskId);
       if (error) {
         throw error;
