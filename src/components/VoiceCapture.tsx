@@ -1,921 +1,505 @@
-import React, { useState, useRef } from 'react';
-import { Mic, MicOff, ArrowRight, List, Sparkles, Zap, Play, ChevronRight, ChevronLeft, X, Check, Bug, Clock, Cpu, RefreshCw, AlertTriangle } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Mic, MicOff, Volume2, Copy, RotateCcw, Wrench, CheckCircle, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Task } from '@/types/Task';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { Task } from '@/types/Task';
+
 interface VoiceCaptureProps {
   onTaskCreated: (task: Task) => void;
   onSwitchToTasks: () => void;
   taskCount: number;
 }
-interface ProcessingTimings {
-  whisperTime?: string;
-  chatgptTime?: string;
-  databaseTime?: string;
-  totalTime?: string;
-}
-interface TokenUsage {
-  totalTokens?: number;
-  promptTokens?: number;
-  completionTokens?: number;
-  estimatedCost?: string;
-}
+
 interface TranscriptionResult {
-  rawTranscription?: string;
-  cleanedText?: string;
-  extractedTasks?: Array<{
+  rawTranscription: string;
+  cleanedText: string;
+  extractedTasks: Array<{
     title: string;
     description: string;
     priority: 'low' | 'medium' | 'high';
+    actionType: 'reminder' | 'call' | 'text' | 'email' | 'note';
+    scheduledFor: string | null;
+    contactInfo: {
+      name?: string;
+      phone?: string;
+      email?: string;
+    };
   }>;
-  improvements?: string;
-  confidence?: 'high' | 'medium' | 'low';
-  potentialErrors?: string[];
-  timings?: any;
-  processingStages?: ProcessingTimings;
-  tokenUsage?: TokenUsage;
+  improvements: string;
+  confidence: 'low' | 'medium' | 'high';
+  potentialErrors: string[];
+  timings: Record<string, number>;
 }
+
 export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   onTaskCreated,
   onSwitchToTasks,
   taskCount
 }) => {
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState('');
+  const [audioData, setAudioData] = useState<string>('');
+  const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStage, setProcessingStage] = useState('');
-  const [processingProgress, setProcessingProgress] = useState(0);
-  const [showTranscriptPopup, setShowTranscriptPopup] = useState(false);
-  const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult>({});
-  const [debugMode, setDebugMode] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const [performanceMetrics, setPerformanceMetrics] = useState<ProcessingTimings>({});
-  const [tokenMetrics, setTokenMetrics] = useState<TokenUsage>({});
-  const [lastAudioBlob, setLastAudioBlob] = useState<Blob | null>(null);
-  const {
-    toast
-  } = useToast();
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const processingStartTime = useRef<number>(0);
-  const addDebugLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    const logMessage = `[${timestamp}] ${message}`;
-    console.log(logMessage);
-    setDebugLogs(prev => [...prev.slice(-9), logMessage]);
-  };
-  const getMimeType = () => {
-    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/wav', 'audio/ogg;codecs=opus', 'audio/ogg'];
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        addDebugLog(`Using MIME type: ${type}`);
-        return type;
-      }
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (isRecording) {
+      interval = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      setRecordingTime(0);
     }
-    addDebugLog('No supported MIME type found, using default');
-    return '';
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRecording]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
   const startRecording = async () => {
-    addDebugLog('Starting recording...');
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('MediaRecorder not supported on this device');
-      }
-      addDebugLog('Requesting microphone access...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 44100
-        }
-      });
-      addDebugLog('Microphone access granted');
-      const mimeType = getMimeType();
-      const options = mimeType ? {
-        mimeType
-      } : undefined;
-      const mediaRecorder = new MediaRecorder(stream, options);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
-      mediaRecorder.ondataavailable = event => {
-        addDebugLog(`Audio data available: ${event.data.size} bytes`);
+
+      mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
-      mediaRecorder.onstop = async () => {
-        addDebugLog('Recording stopped, processing audio...');
-        const mimeType = mediaRecorder.mimeType || 'audio/webm';
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: mimeType
-        });
-        addDebugLog(`Audio blob created: ${audioBlob.size} bytes, type: ${audioBlob.type}`);
 
-        // Store the audio blob for potential retries
-        setLastAudioBlob(audioBlob);
-        await processAudio(audioBlob);
-        stream.getTracks().forEach(track => {
-          track.stop();
-          addDebugLog(`Stopped track: ${track.kind}`);
-        });
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = reader.result as string;
+          const base64Data = base64String.split(',')[1];
+          setAudioData(base64Data);
+          processAudio(base64Data);
+        };
+        reader.readAsDataURL(audioBlob);
+        
+        stream.getTracks().forEach(track => track.stop());
       };
-      mediaRecorder.onerror = event => {
-        addDebugLog(`MediaRecorder error: ${event}`);
-      };
-      mediaRecorder.start(1000);
+
+      mediaRecorder.start();
       setIsRecording(true);
-      setTranscript('');
-      toast({
-        title: "Recording Started",
-        description: "Speak now. Press the button again to stop and process."
-      });
-    } catch (error: any) {
-      addDebugLog(`Error starting recording: ${error.message}`);
+      setShowTranscript(false);
+      setTranscriptionResult(null);
+    } catch (error) {
       console.error('Error starting recording:', error);
-      let errorMessage = "Could not access microphone.";
-      if (error.name === 'NotAllowedError') {
-        errorMessage = "Microphone permission denied. Please allow microphone access and try again.";
-      } else if (error.name === 'NotFoundError') {
-        errorMessage = "No microphone found. Please check your device settings.";
-      } else if (error.name === 'NotSupportedError') {
-        errorMessage = "Audio recording not supported on this device.";
-      }
       toast({
         title: "Recording Error",
-        description: errorMessage,
+        description: "Could not start recording. Please check your microphone permissions.",
         variant: "destructive"
       });
     }
   };
+
   const stopRecording = () => {
-    addDebugLog('Stopping recording...');
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      toast({
-        title: "Processing Recording",
-        description: "Converting speech to text and analyzing with AI..."
-      });
     }
   };
-  const retryTranscription = async (forceAggressiveCorrection = false) => {
-    if (!lastAudioBlob) {
-      toast({
-        title: "No Audio Available",
-        description: "Please record again to retry transcription.",
-        variant: "destructive"
-      });
-      return;
-    }
-    addDebugLog(`Retrying transcription with aggressive correction: ${forceAggressiveCorrection}`);
-    await processAudio(lastAudioBlob, forceAggressiveCorrection);
-  };
-  const testEdgeFunction = async () => {
-    addDebugLog('Testing edge function with simulated audio...');
-    setIsProcessing(true);
-    setProcessingStage('Preparing test audio...');
-    setProcessingProgress(10);
-    try {
-      // Create a minimal valid WAV file (1 second of silence)
-      const sampleRate = 44100;
-      const numChannels = 1;
-      const bitsPerSample = 16;
-      const duration = 1;
-      const numSamples = sampleRate * duration;
-      const arrayBuffer = new ArrayBuffer(44 + numSamples * 2);
-      const view = new DataView(arrayBuffer);
-      const writeString = (offset: number, string: string) => {
-        for (let i = 0; i < string.length; i++) {
-          view.setUint8(offset + i, string.charCodeAt(i));
-        }
-      };
-      writeString(0, 'RIFF');
-      view.setUint32(4, 36 + numSamples * 2, true);
-      writeString(8, 'WAVE');
-      writeString(12, 'fmt ');
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, numChannels, true);
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true);
-      view.setUint16(32, numChannels * bitsPerSample / 8, true);
-      view.setUint16(34, bitsPerSample, true);
-      writeString(36, 'data');
-      view.setUint32(40, numSamples * 2, true);
-      for (let i = 0; i < numSamples; i++) {
-        const sample = Math.sin(2 * Math.PI * 440 * i / sampleRate) * 0.1;
-        view.setInt16(44 + i * 2, sample * 32767, true);
-      }
-      const audioBlob = new Blob([arrayBuffer], {
-        type: 'audio/wav'
-      });
-      addDebugLog(`Test audio blob created: ${audioBlob.size} bytes`);
-      setProcessingProgress(30);
-      await processAudio(audioBlob);
-    } catch (error: any) {
-      addDebugLog(`Test failed: ${error.message}`);
-      toast({
-        title: "Test Failed",
-        description: `Edge function test failed: ${error.message}`,
-        variant: "destructive"
-      });
-    } finally {
-      setIsProcessing(false);
-      setProcessingStage('');
-      setProcessingProgress(0);
-    }
-  };
-  const simulateVoiceInput = () => {
-    addDebugLog('Simulating voice input...');
-    const demoMessage = "Call Ryan tomorrow and buy paint for bedroom";
-    setTranscriptionResult({
-      rawTranscription: demoMessage,
-      cleanedText: "Call Ryan tomorrow and buy paint for the bedroom.",
-      extractedTasks: [{
-        title: "Call Ryan",
-        description: "Schedule a call with Ryan for tomorrow",
-        priority: "medium"
-      }, {
-        title: "Buy paint for bedroom",
-        description: "Purchase paint for bedroom decoration",
-        priority: "low"
-      }],
-      improvements: "Improved grammar and clarity, extracted actionable tasks",
-      confidence: "high",
-      potentialErrors: []
-    });
-    setShowTranscriptPopup(true);
-    toast({
-      title: "Demo Message Simulated",
-      description: "Voice input simulated with AI analysis"
-    });
-  };
-  const processAudio = async (audioBlob: Blob, forceAggressiveCorrection = false) => {
-    setIsProcessing(true);
-    processingStartTime.current = Date.now();
-    setProcessingStage('Converting audio to base64...');
-    setProcessingProgress(0);
-    addDebugLog(`Processing audio blob of size: ${audioBlob.size}, type: ${audioBlob.type}`);
-    try {
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      reader.onloadend = async () => {
-        try {
-          const base64Audio = (reader.result as string).split(',')[1];
-          addDebugLog(`Base64 audio length: ${base64Audio.length}`);
-          setProcessingProgress(20);
-          setProcessingStage('Stage 1: Whisper transcription...');
-          addDebugLog('Calling voice-to-text edge function...');
-          const {
-            data,
-            error
-          } = await supabase.functions.invoke('voice-to-text', {
-            body: {
-              audio: base64Audio,
-              forceAggressiveCorrection
-            }
-          });
-          setProcessingProgress(60);
-          setProcessingStage('Stage 2: AI analysis and cleanup...');
-          addDebugLog(`Edge function response: ${JSON.stringify({
-            data,
-            error
-          })}`);
-          if (error) {
-            addDebugLog(`Edge function error: ${JSON.stringify(error)}`);
-            throw new Error(`Edge function error: ${error.message || JSON.stringify(error)}`);
-          }
-          setProcessingProgress(90);
-          setProcessingStage('Finalizing results...');
-          if (data) {
-            addDebugLog(`Processing complete: ${JSON.stringify(data)}`);
 
-            // Store performance metrics
-            if (data.processingStages) {
-              setPerformanceMetrics(data.processingStages);
-              addDebugLog(`Performance metrics: ${JSON.stringify(data.processingStages)}`);
-            }
-
-            // Store token usage metrics
-            if (data.tokenUsage) {
-              setTokenMetrics(data.tokenUsage);
-              addDebugLog(`Token usage: ${JSON.stringify(data.tokenUsage)}`);
-            }
-
-            // Store the complete result
-            setTranscriptionResult({
-              rawTranscription: data.rawTranscription,
-              cleanedText: data.cleanedText,
-              extractedTasks: data.extractedTasks || [],
-              improvements: data.improvements,
-              confidence: data.confidence || 'medium',
-              potentialErrors: data.potentialErrors || [],
-              timings: data.timings,
-              processingStages: data.processingStages,
-              tokenUsage: data.tokenUsage
-            });
-            setProcessingProgress(100);
-            setShowTranscriptPopup(true);
-            const totalTime = Date.now() - processingStartTime.current;
-            addDebugLog(`Total client processing time: ${totalTime}ms`);
-            const confidenceEmoji = data.confidence === 'high' ? '✅' : data.confidence === 'low' ? '⚠️' : '📝';
-            toast({
-              title: `${confidenceEmoji} AI Processing Complete`,
-              description: `Speech analyzed (${data.confidence} confidence) in ${data.processingStages?.totalTime || 'unknown time'}. Cost: ${data.tokenUsage?.estimatedCost || 'N/A'}`
-            });
-          } else {
-            addDebugLog(`No data in response: ${JSON.stringify(data)}`);
-            throw new Error('No transcription received from the service');
-          }
-        } catch (innerError: any) {
-          addDebugLog(`Error in reader.onloadend: ${innerError.message}`);
-          throw innerError;
-        }
-      };
-      reader.onerror = error => {
-        addDebugLog(`FileReader error: ${error}`);
-        throw new Error('Failed to read audio file');
-      };
-    } catch (error: any) {
-      addDebugLog(`Error processing audio: ${error.message}`);
-      console.error('Error processing audio:', error);
-      let errorMessage = `Failed to convert speech to text: ${error.message}`;
-      if (error.message.includes('API key')) {
-        errorMessage = "OpenAI API key not configured. Please check your Supabase Edge Function secrets.";
-      } else if (error.message.includes('OpenAI service')) {
-        errorMessage = "OpenAI service error. Please try again later.";
-      }
-      toast({
-        title: "Processing Error",
-        description: errorMessage,
-        variant: "destructive"
-      });
-    } finally {
-      setIsProcessing(false);
-      setProcessingStage('');
-      setProcessingProgress(0);
-    }
-  };
-  const handleSaveTranscript = async () => {
+  const processAudio = async (base64Audio: string) => {
     setIsProcessing(true);
-    addDebugLog(`Saving transcript and extracted tasks`);
+    setProcessingStage('Analyzing audio...');
     
     try {
-      await createTaskFromTranscription(transcriptionResult);
-      
-      toast({
-        title: "Tasks saved successfully!",
-        description: `${transcriptionResult.extractedTasks?.length || 1} tasks created. ${transcriptionResult.improvements || ''}`
+      const { data, error } = await supabase.functions.invoke('voice-to-text', {
+        body: { audio: base64Audio }
       });
+
+      if (error) {
+        console.error('Supabase function error:', error);
+        throw error;
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to process audio');
+      }
+
+      console.log('Voice-to-text result:', data);
+      setTranscriptionResult(data);
+      setShowTranscript(true);
       
-      setTranscriptionResult({});
-      setShowTranscriptPopup(false);
-      setTranscript('');
-      setPerformanceMetrics({});
-      setLastAudioBlob(null);
-    } catch (error: any) {
-      addDebugLog(`Error processing transcript: ${error.message}`);
-      console.error('Error processing transcript:', error);
+      // Auto-save tasks that have high confidence
+      if (data.confidence === 'high' && data.extractedTasks?.length > 0) {
+        await saveAllTasks(data.extractedTasks);
+        toast({
+          title: "Tasks Saved",
+          description: `${data.extractedTasks.length} task(s) processed and saved successfully!`,
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error processing audio:', error);
       toast({
-        title: "Error saving tasks",
-        description: "There was an error saving your tasks. Please try again.",
+        title: "Processing Error",
+        description: "Failed to process audio. Please try again.",
         variant: "destructive"
       });
     } finally {
       setIsProcessing(false);
+      setProcessingStage('');
     }
   };
 
-  const createTaskFromTranscription = async (result: any) => {
-    if (!result.extractedTasks || result.extractedTasks.length === 0) {
-      console.log('No tasks extracted, creating simple task');
-      const simpleTask: Task = {
-        id: crypto.randomUUID(),
-        title: result.cleanedText.slice(0, 100),
-        description: result.cleanedText,
-        priority: 'medium',
-        completed: false,
-        createdAt: new Date().toISOString(),
-        actionType: 'note'
-      };
-      
-      await saveTaskToDatabase(simpleTask);
-      return;
-    }
-
-    console.log('Creating tasks from extracted data:', result.extractedTasks);
-
-    for (const extractedTask of result.extractedTasks) {
-      // Properly cast the extracted task properties to our Task interface types
-      const priority = ['low', 'medium', 'high'].includes(extractedTask.priority) 
-        ? extractedTask.priority as 'low' | 'medium' | 'high' 
-        : 'medium';
-      
-      const actionType = ['reminder', 'call', 'text', 'email', 'note'].includes(extractedTask.actionType)
-        ? extractedTask.actionType as 'reminder' | 'call' | 'text' | 'email' | 'note'
-        : 'note';
-
-      const task: Task = {
-        id: crypto.randomUUID(),
-        title: extractedTask.title || result.cleanedText.slice(0, 50),
-        description: extractedTask.description || result.cleanedText,
-        priority: priority,
-        completed: false,
-        createdAt: new Date().toISOString(),
-        actionType: actionType,
-        scheduledFor: extractedTask.scheduledFor || undefined,
-        contactInfo: extractedTask.contactInfo ? {
-          name: extractedTask.contactInfo.name,
-          phone: extractedTask.contactInfo.phone,
-          email: extractedTask.contactInfo.email
-        } : undefined,
-        reminderSettings: { web_push: true }
-      };
-
-      // For reminders with scheduled times, don't show them in the main task list immediately
-      // They should only appear when the scheduled time arrives
-      if (task.actionType === 'reminder' && task.scheduledFor) {
-        await saveReminderToDatabase(task);
-      } else {
-        await saveTaskToDatabase(task);
-      }
-
-      // Create scheduled action if there's a scheduled time
-      if (task.scheduledFor && task.actionType && task.actionType !== 'note') {
-        await createScheduledAction(task);
-      }
+  const saveAllTasks = async (tasks: TranscriptionResult['extractedTasks']) => {
+    for (const taskData of tasks) {
+      await saveTask(taskData);
     }
   };
 
-  const saveReminderToDatabase = async (task: Task) => {
+  const saveTask = async (taskData: TranscriptionResult['extractedTasks'][0]) => {
     try {
-      console.log('Saving reminder to database (will not appear in task list until scheduled time):', task);
+      console.log('Saving task:', taskData);
       
-      // Save to database but don't add to the main task list yet
-      const { data, error } = await supabase.from('tasks').insert([
-        {
-          title: task.title,
-          description: task.description,
-          priority: task.priority,
-          completed: task.completed,
-          action_type: task.actionType || 'reminder',
-          scheduled_for: task.scheduledFor,
-          contact_info: task.contactInfo || null,
-          reminder_settings: task.reminderSettings || { web_push: true }
-        }
-      ]).select().single();
+      // First, create the task in the database
+      const { data: task, error: taskError } = await supabase
+        .from('tasks')
+        .insert([{
+          title: taskData.title,
+          description: taskData.description,
+          priority: taskData.priority,
+          action_type: taskData.actionType,
+          contact_info: taskData.contactInfo,
+          scheduled_for: taskData.scheduledFor,
+          completed: false
+        }])
+        .select()
+        .single();
 
-      if (error) {
-        throw error;
+      if (taskError) {
+        console.error('Error creating task:', taskError);
+        throw taskError;
       }
 
-      console.log('✅ Reminder saved successfully (scheduled for later):', data);
-      
-      // Don't call onTaskCreated for scheduled reminders - they should only appear when due
-      toast({
-        title: "Reminder Scheduled",
-        description: `Reminder set for ${new Date(task.scheduledFor!).toLocaleString()}`,
-      });
+      console.log('Task created successfully:', task);
 
-    } catch (error) {
-      console.error('❌ Error saving reminder:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save reminder. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
+      // For reminders, create a scheduled action
+      if (taskData.actionType === 'reminder' && taskData.scheduledFor && task) {
+        console.log('Creating scheduled action for reminder');
+        
+        const { data: scheduledAction, error: scheduledError } = await supabase
+          .from('scheduled_actions')
+          .insert([{
+            task_id: task.id,
+            action_type: taskData.actionType,
+            scheduled_for: taskData.scheduledFor,
+            contact_info: taskData.contactInfo,
+            status: 'pending'
+          }])
+          .select()
+          .single();
 
-  const saveTaskToDatabase = async (task: Task) => {
-    try {
-      console.log('Saving task to database:', task);
-      
-      const { data, error } = await supabase.from('tasks').insert([
-        {
-          title: task.title,
-          description: task.description,
-          priority: task.priority,
-          completed: task.completed,
-          action_type: task.actionType || 'note',
-          scheduled_for: task.scheduledFor || null,
-          contact_info: task.contactInfo || null,
-          reminder_settings: task.reminderSettings || { web_push: true }
+        if (scheduledError) {
+          console.error('Error creating scheduled action:', scheduledError);
+          // Don't throw here - the task was created successfully
+        } else {
+          console.log('Scheduled action created successfully:', scheduledAction);
         }
-      ]).select().single();
-
-      if (error) {
-        throw error;
       }
 
-      console.log('✅ Task saved successfully:', data);
-      
-      // Convert back to Task interface and notify parent
-      const savedTask: Task = {
-        id: data.id,
-        title: data.title,
-        description: data.description,
-        priority: data.priority as 'low' | 'medium' | 'high',
-        completed: data.completed,
-        createdAt: data.created_at,
-        actionType: data.action_type as 'reminder' | 'call' | 'text' | 'email' | 'note',
-        scheduledFor: data.scheduled_for,
-        contactInfo: data.contact_info ? data.contact_info as { name?: string; phone?: string; email?: string } : undefined,
-        reminderSettings: data.reminder_settings ? data.reminder_settings as { web_push?: boolean; email?: boolean; sms?: boolean } : undefined
+      // Create Task object for the UI
+      const newTask: Task = {
+        id: task.id,
+        title: task.title,
+        description: task.description || '',
+        priority: task.priority as 'low' | 'medium' | 'high',
+        dueDate: task.due_date || undefined,
+        completed: task.completed,
+        createdAt: task.created_at,
+        actionType: task.action_type as 'reminder' | 'call' | 'text' | 'email' | 'note',
+        scheduledFor: task.scheduled_for || undefined,
+        contactInfo: task.contact_info || undefined,
       };
 
-      onTaskCreated(savedTask);
+      // Only call onTaskCreated for non-reminder tasks or immediate tasks
+      if (taskData.actionType !== 'reminder' || !taskData.scheduledFor) {
+        onTaskCreated(newTask);
+      }
 
+      return newTask;
     } catch (error) {
-      console.error('❌ Error saving task:', error);
+      console.error('Error saving task:', error);
       toast({
-        title: "Error",
+        title: "Save Error",
         description: "Failed to save task. Please try again.",
         variant: "destructive"
       });
+      throw error;
     }
   };
 
-  const createScheduledAction = async (task: Task) => {
-    try {
-      console.log('Creating scheduled action for task:', task.id);
+  const playAudio = () => {
+    if (audioData && !isPlaying) {
+      const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], {
+        type: 'audio/webm'
+      });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      
+      audio.onplay = () => setIsPlaying(true);
+      audio.onended = () => {
+        setIsPlaying(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+      audio.onerror = () => {
+        setIsPlaying(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+      
+      audio.play();
+    }
+  };
 
-      const { error } = await supabase.from('scheduled_actions').insert([
-        {
-          task_id: task.id,
-          action_type: task.actionType,
-          scheduled_for: task.scheduledFor,
-          contact_info: task.contactInfo || null,
-          notification_settings: task.reminderSettings || { web_push: true, email: false, sms: false }
-        }
-      ]);
-
-      if (error) {
-        throw error;
-      }
-
-      console.log('✅ Scheduled action created successfully');
-
-    } catch (error) {
-      console.error('❌ Error creating scheduled action:', error);
+  const copyToClipboard = () => {
+    if (transcriptionResult?.cleanedText) {
+      navigator.clipboard.writeText(transcriptionResult.cleanedText);
       toast({
-        title: "Warning",
-        description: "Task created but scheduling failed.",
-        variant: "destructive"
+        title: "Copied",
+        description: "Text copied to clipboard",
       });
     }
   };
 
-  const handleCancelTranscript = () => {
-    addDebugLog('Cancelling transcript');
-    setTranscriptionResult({});
-    setShowTranscriptPopup(false);
-    setTranscript('');
-    setPerformanceMetrics({});
-    setLastAudioBlob(null);
+  const handleRetry = () => {
+    setShowTranscript(false);
+    setTranscriptionResult(null);
+    setAudioData('');
+    startRecording();
+  };
+
+  const handleForceAccept = async () => {
+    if (transcriptionResult?.extractedTasks?.length > 0) {
+      await saveAllTasks(transcriptionResult.extractedTasks);
+      toast({
+        title: "Tasks Saved",
+        description: `${transcriptionResult.extractedTasks.length} task(s) saved successfully!`,
+      });
+      setShowTranscript(false);
+      setTranscriptionResult(null);
+    }
+  };
+
+  const handleCustomEdit = () => {
     toast({
-      title: "Transcript Cancelled",
-      description: "Your transcription has been discarded."
+      title: "Custom Edit",
+      description: "Custom editing feature coming soon!",
     });
   };
 
-  const handleRecordingToggle = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
+  return (
+    <div className="flex flex-col items-center justify-center min-h-full p-4 space-y-6">
+      {/* Floating Task Count */}
+      {taskCount > 0 && (
+        <div className="fixed top-20 right-4 z-40">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSwitchToTasks}
+            className="bg-cyan-500/20 border-cyan-400/40 text-cyan-100 hover:bg-cyan-500/30 backdrop-blur-sm"
+          >
+            <CheckCircle className="w-4 h-4 mr-2" />
+            {taskCount} Tasks
+          </Button>
+        </div>
+      )}
 
-  const getConfidenceColor = (confidence?: string) => {
-    switch (confidence) {
-      case 'high':
-        return 'text-emerald-400 border-emerald-500/30 bg-emerald-900/20';
-      case 'low':
-        return 'text-yellow-400 border-yellow-500/30 bg-yellow-900/20';
-      default:
-        return 'text-cyan-400 border-cyan-500/30 bg-cyan-900/20';
-    }
-  };
-
-  return <div className="h-full flex flex-col relative overflow-hidden bg-gradient-to-br from-slate-900/90 via-indigo-950/90 to-slate-900/90">
-      {/* Futuristic background pattern */}
-      <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent animate-pulse" />
-      
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
-        <div className="flex items-center gap-1 text-slate-400 text-xs font-medium">
+      {/* Main Recording Interface */}
+      <div className="text-center space-y-4">
+        <div className="relative">
+          <Button
+            onClick={isRecording ? stopRecording : startRecording}
+            disabled={isProcessing}
+            className={`w-32 h-32 rounded-full transition-all duration-300 ${
+              isRecording 
+                ? 'bg-red-500 hover:bg-red-600 animate-pulse shadow-lg shadow-red-500/40' 
+                : 'bg-gradient-to-br from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 shadow-lg shadow-cyan-500/40'
+            }`}
+          >
+            {isRecording ? (
+              <MicOff className="w-12 h-12 text-white" />
+            ) : (
+              <Mic className="w-12 h-12 text-white" />
+            )}
+          </Button>
           
-          
-        </div>
-        
-      </div>
-      
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
-        <div className="flex items-center gap-1 text-cyan-300 text-xs font-medium">
-          
-          
-        </div>
-        
-      </div>
-      
-      {/* Header */}
-      <div className="flex justify-between items-center p-6 pt-16 relative z-10">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight mb-1">
-            Voice Input
-          </h1>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-            <p className="text-cyan-200/80 font-medium">AI-powered speech processing</p>
-          </div>
-          {/* Performance metrics display */}
-          {Object.keys(performanceMetrics).length > 0 && <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
-              <Clock className="w-3 h-3" />
-              <span>Whisper: {performanceMetrics.whisperTime}</span>
-              <span>ChatGPT: {performanceMetrics.chatgptTime}</span>
-              <span>Total: {performanceMetrics.totalTime}</span>
-            </div>}
-          {/* Token usage metrics display */}
-          {tokenMetrics.totalTokens && <div className="flex items-center gap-3 mt-1 text-xs text-emerald-400">
-              <span>💰 {tokenMetrics.totalTokens} tokens</span>
-              <span>{tokenMetrics.estimatedCost}</span>
-            </div>}
-        </div>
-        
-        {/* Debug toggle */}
-        <Button variant="outline" size="sm" onClick={() => setDebugMode(!debugMode)} className="border-slate-600 text-slate-300 hover:bg-slate-700">
-          <Bug className="w-4 h-4" />
-        </Button>
-      </div>
-
-      {/* Debug Panel */}
-      {debugMode && <div className="mx-6 mb-4 p-4 bg-slate-800/50 backdrop-blur rounded-lg border border-slate-600 relative z-10">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-              <Cpu className="w-4 h-4" />
-              Debug Logs & Performance
-            </h3>
-            <Button variant="outline" size="sm" onClick={() => setDebugLogs([])} className="text-xs border-slate-600 text-slate-400 hover:bg-slate-700">
-              Clear
-            </Button>
-          </div>
-          <div className="space-y-1 max-h-32 overflow-y-auto text-xs text-slate-400 font-mono">
-            {debugLogs.length === 0 ? <p>No logs yet...</p> : debugLogs.map((log, index) => <div key={index} className="break-words">{log}</div>)}
-          </div>
-          {/* Token usage in debug panel */}
-          {tokenMetrics.totalTokens && <div className="mt-3 pt-2 border-t border-slate-600 text-xs text-emerald-400">
-              <div className="grid grid-cols-2 gap-2">
-                <span>Prompt: {tokenMetrics.promptTokens}</span>
-                <span>Completion: {tokenMetrics.completionTokens}</span>
-                <span>Total: {tokenMetrics.totalTokens}</span>
-                <span>Cost: {tokenMetrics.estimatedCost}</span>
-              </div>
-            </div>}
-        </div>}
-
-      {/* Processing Progress */}
-      {isProcessing && <div className="mx-6 mb-4 p-4 bg-slate-800/50 backdrop-blur rounded-lg border border-cyan-500/30 relative z-10">
-          <div className="flex items-center gap-3 mb-3">
-            <Zap className="w-5 h-5 text-cyan-400 animate-pulse" />
-            <span className="text-cyan-200 font-medium">{processingStage}</span>
-          </div>
-          <Progress value={processingProgress} className="h-2" />
-          <div className="text-xs text-slate-400 mt-2">
-            {processingProgress}% complete
-          </div>
-        </div>}
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-10 relative z-10">
-        {/* Microphone and Demo Button Container */}
-        <div className="flex items-center gap-8">
-          {/* Test Button (Desktop only) */}
-          <div className="hidden md:block">
-            <Button size="lg" onClick={testEdgeFunction} disabled={isProcessing || isRecording} className="w-20 h-20 rounded-full transition-all duration-500 shadow-2xl border-2 bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 border-green-400/50 shadow-green-500/30 group relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-              <Zap className="w-8 h-8 text-white drop-shadow-lg relative z-10" />
-            </Button>
-            <p className="text-xs text-green-300 text-center mt-2 font-medium">Test API</p>
-          </div>
-
-          {/* Demo Button (Desktop only) */}
-          <div className="hidden md:block">
-            <Button size="lg" onClick={simulateVoiceInput} disabled={isProcessing || isRecording} className="w-20 h-20 rounded-full transition-all duration-500 shadow-2xl border-2 bg-gradient-to-br from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 border-purple-400/50 shadow-purple-500/30 group relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-              <Play className="w-8 h-8 text-white drop-shadow-lg relative z-10" />
-            </Button>
-            <p className="text-xs text-purple-300 text-center mt-2 font-medium">Demo</p>
-          </div>
-
-          {/* Main Microphone Button */}
-          <div className="relative">
-            <div className={`absolute -inset-20 rounded-full transition-all duration-500 ${isRecording ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 animate-pulse' : ''}`}></div>
-            <div className={`absolute -inset-12 rounded-full transition-all duration-300 ${isRecording ? 'bg-gradient-to-r from-cyan-400/30 to-purple-400/30 animate-ping' : ''}`}></div>
-            
-            <Button size="lg" onClick={handleRecordingToggle} disabled={isProcessing} className={`w-40 h-40 rounded-full transition-all duration-500 shadow-2xl border-2 relative overflow-hidden ${isRecording ? 'bg-gradient-to-br from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 border-red-400/50 shadow-red-500/30' : 'bg-gradient-to-br from-cyan-500 to-purple-600 hover:from-cyan-600 hover:to-purple-700 border-cyan-400/50 shadow-cyan-500/30'} group`}>
-              <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-              
-              {isRecording ? <MicOff className="w-16 h-16 text-white drop-shadow-lg relative z-10" /> : <Mic className="w-16 h-16 text-white drop-shadow-lg relative z-10" />}
-              
-              <div className={`absolute inset-0 rounded-full transition-all duration-300 ${isRecording ? 'animate-spin' : ''}`}>
-                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
-              </div>
-            </Button>
-          </div>
+          {isRecording && (
+            <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2">
+              <Badge variant="outline" className="bg-red-500/20 text-red-300 border-red-500/40">
+                {formatTime(recordingTime)}
+              </Badge>
+            </div>
+          )}
         </div>
 
-        {/* Status Text */}
-        <div className="text-center">
-          {isProcessing ? <div className="flex items-center gap-3 text-xl text-cyan-100">
-              <Zap className="w-6 h-6 text-cyan-400 animate-pulse" />
-              <span className="font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
-                {processingStage || 'AI processing...'}
-              </span>
-            </div> : isRecording ? <div className="space-y-3">
-              <p className="text-xl text-red-300 font-semibold flex items-center justify-center gap-2">
-                <div className="w-3 h-3 bg-red-400 rounded-full animate-pulse"></div>
-                <span className="bg-gradient-to-r from-red-200 to-pink-200 bg-clip-text text-transparent">
-                  Recording... Press again to stop
-                </span>
-              </p>
-              <p className="text-sm text-slate-300/80">Whisper AI + ChatGPT will process your voice</p>
-            </div> : <div className="space-y-3">
-              <p className="text-xl text-white font-medium bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
-                Tap to start recording
-              </p>
-              <p className="text-sm text-slate-300/80">Two-stage AI processing: Whisper transcription → ChatGPT cleanup</p>
-              <div className="hidden md:block">
-                <p className="text-xs text-purple-300/80">Use demo for quick prototyping or test API for debugging</p>
-              </div>
-            </div>}
-        </div>
-
-        {/* Instructions */}
-        <div className="text-center space-y-4 max-w-md">
-          <p className="text-slate-300/90 font-medium">
-            Speak naturally: <span className="text-cyan-300">"Call Ryan tomorrow"</span> or <span className="text-purple-300">"Buy groceries this weekend"</span>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold text-white">
+            {isRecording ? 'Recording...' : 'Tap to Record'}
+          </h2>
+          <p className="text-slate-300">
+            {isRecording 
+              ? 'Speak your task or reminder clearly' 
+              : 'Press and hold to capture your voice command'
+            }
           </p>
-          <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
-            
-          </div>
         </div>
+
+        {isProcessing && (
+          <div className="flex flex-col items-center space-y-2">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
+            <p className="text-slate-300 text-sm">{processingStage}</p>
+          </div>
+        )}
       </div>
 
-      {/* Enhanced Transcript Popup with Try Again functionality */}
-      {showTranscriptPopup && transcriptionResult && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-2xl shadow-2xl border-0 bg-slate-800/90 backdrop-blur-xl border border-cyan-500/30 animate-in fade-in-0 zoom-in-95 duration-300">
+      {/* Transcript Popup */}
+      {showTranscript && transcriptionResult && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <Card className="bg-slate-800/90 backdrop-blur-xl border border-cyan-500/30 w-full max-w-lg max-h-[80vh] overflow-y-auto">
             <CardContent className="p-6">
-              <div className="flex items-start gap-3 mb-6">
-                <div className="w-2 h-2 bg-cyan-400 rounded-full mt-2 flex-shrink-0 animate-pulse"></div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-3">
-                    <h3 className="text-lg font-semibold text-white">AI Processing Complete</h3>
-                    {transcriptionResult.processingStages?.totalTime && <Badge variant="outline" className="text-xs">
-                        {transcriptionResult.processingStages.totalTime}
-                      </Badge>}
-                    {transcriptionResult.tokenUsage?.estimatedCost && <Badge variant="outline" className="text-xs text-emerald-400">
-                        {transcriptionResult.tokenUsage.estimatedCost}
-                      </Badge>}
-                    {transcriptionResult.confidence && <Badge className={`text-xs ${getConfidenceColor(transcriptionResult.confidence)}`}>
-                        {transcriptionResult.confidence} confidence
-                      </Badge>}
-                  </div>
-                  
-                  {/* Potential Errors Warning */}
-                  {transcriptionResult.potentialErrors && transcriptionResult.potentialErrors.length > 0 && <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertTriangle className="w-4 h-4 text-yellow-400" />
-                        <span className="text-sm text-yellow-300 font-medium">Potential transcription errors detected:</span>
-                      </div>
-                      <ul className="text-xs text-yellow-200 list-disc list-inside">
-                        {transcriptionResult.potentialErrors.map((error, index) => <li key={index}>{error}</li>)}
-                      </ul>
-                    </div>}
-                  
-                  {/* Before/After Comparison */}
-                  {transcriptionResult.rawTranscription && transcriptionResult.cleanedText && <div className="space-y-4 mb-4">
-                      {transcriptionResult.rawTranscription !== transcriptionResult.cleanedText && <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-xs text-slate-400 mb-2">Original (Whisper):</p>
-                            <p className="text-slate-300 text-sm italic bg-slate-700/30 p-3 rounded border border-slate-600/30">
-                              "{transcriptionResult.rawTranscription}"
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-emerald-400 mb-2">Cleaned (ChatGPT):</p>
-                            <p className="text-emerald-200 text-sm bg-emerald-900/20 p-3 rounded border border-emerald-500/30">
-                              "{transcriptionResult.cleanedText}"
-                            </p>
-                          </div>
-                        </div>}
-                      
-                      {transcriptionResult.rawTranscription === transcriptionResult.cleanedText && <div>
-                          <p className="text-xs text-slate-400 mb-2">Transcription:</p>
-                          <p className="text-slate-200 bg-slate-700/50 p-3 rounded border border-slate-600/30">
-                            "{transcriptionResult.cleanedText}"
-                          </p>
-                        </div>}
-                    </div>}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-white">Transcript Result</h3>
+                  <Badge 
+                    variant="outline" 
+                    className={`${
+                      transcriptionResult.confidence === 'high' 
+                        ? 'bg-green-500/20 text-green-300 border-green-500/40'
+                        : transcriptionResult.confidence === 'medium'
+                        ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                        : 'bg-red-500/20 text-red-300 border-red-500/40'
+                    }`}
+                  >
+                    {transcriptionResult.confidence} confidence
+                  </Badge>
+                </div>
 
-                  {/* Extracted Tasks */}
-                  {transcriptionResult.extractedTasks && transcriptionResult.extractedTasks.length > 0 && <div className="mb-4">
-                      <p className="text-xs text-cyan-400 mb-2">Extracted Tasks ({transcriptionResult.extractedTasks.length}):</p>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-slate-400 mb-1">Processed Text:</p>
+                    <p className="text-white bg-slate-700/50 p-3 rounded-lg">
+                      {transcriptionResult.cleanedText}
+                    </p>
+                  </div>
+
+                  {transcriptionResult.extractedTasks?.length > 0 && (
+                    <div>
+                      <p className="text-sm text-slate-400 mb-2">Extracted Tasks:</p>
                       <div className="space-y-2">
-                        {transcriptionResult.extractedTasks.map((task, index) => <div key={index} className="bg-cyan-900/20 p-3 rounded border border-cyan-500/30">
-                            <div className="flex items-center justify-between mb-1">
-                              <p className="text-cyan-200 font-medium text-sm">{task.title}</p>
-                              <Badge variant={task.priority === 'high' ? 'destructive' : task.priority === 'medium' ? 'default' : 'secondary'} className="text-xs">
+                        {transcriptionResult.extractedTasks.map((task, index) => (
+                          <div key={index} className="bg-slate-700/50 p-3 rounded-lg">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className="text-xs">
+                                {task.actionType}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
                                 {task.priority}
                               </Badge>
                             </div>
-                            <p className="text-slate-300 text-xs">{task.description}</p>
-                          </div>)}
+                            <p className="text-white font-medium">{task.title}</p>
+                            <p className="text-slate-300 text-sm">{task.description}</p>
+                            {task.scheduledFor && (
+                              <p className="text-cyan-400 text-xs mt-1">
+                                Scheduled: {new Date(task.scheduledFor).toLocaleString()}
+                              </p>
+                            )}
+                            {task.contactInfo?.name && (
+                              <p className="text-purple-400 text-xs">
+                                Contact: {task.contactInfo.name}
+                              </p>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    </div>}
-
-                  {/* Improvements, Performance & Token Usage */}
-                  <div className="space-y-2">
-                    {transcriptionResult.improvements && <p className="text-xs text-purple-300 bg-purple-900/20 p-2 rounded border border-purple-500/30">
-                        <Sparkles className="w-3 h-3 inline mr-1" />
-                        {transcriptionResult.improvements}
-                      </p>}
-                    
-                    <div className="flex gap-4 text-xs text-slate-400">
-                      {transcriptionResult.processingStages && <>
-                          <span>Whisper: {transcriptionResult.processingStages.whisperTime}</span>
-                          <span>ChatGPT: {transcriptionResult.processingStages.chatgptTime}</span>
-                          <span>DB: {transcriptionResult.processingStages.databaseTime}</span>
-                        </>}
-                      {transcriptionResult.tokenUsage?.totalTokens && <span className="text-emerald-400">
-                          {transcriptionResult.tokenUsage.totalTokens} tokens ({transcriptionResult.tokenUsage.estimatedCost})
-                        </span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex gap-2">
-                  {lastAudioBlob && (
-                    <div className="grid grid-cols-2 gap-2 md:flex md:gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => retryTranscription(false)} 
-                        disabled={isProcessing} 
-                        className="flex items-center justify-center gap-2 border-blue-500/30 text-blue-300 hover:bg-blue-500/10 hover:border-blue-400/40"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                        <span className="hidden sm:inline">Try Again</span>
-                        <span className="sm:hidden">Retry</span>
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => retryTranscription(true)} 
-                        disabled={isProcessing} 
-                        className="flex items-center justify-center gap-2 border-orange-500/30 text-orange-300 hover:bg-orange-500/10 hover:border-orange-400/40"
-                      >
-                        <Zap className="w-4 h-4" />
-                        <span className="hidden sm:inline">Force Fix</span>
-                        <span className="sm:hidden">Fix</span>
-                      </Button>
                     </div>
                   )}
                 </div>
-                
-                <div className="flex gap-3">
-                  <Button variant="outline" size="sm" onClick={handleCancelTranscript} disabled={isProcessing} className="flex items-center justify-center gap-2 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:border-red-400/40">
-                    <X className="w-4 h-4" />
-                    <span>Cancel</span>
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    onClick={handleSaveTranscript} 
-                    disabled={isProcessing} 
-                    className="flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 shadow-lg hover:shadow-emerald-500/20 transition-all duration-300"
+
+                {/* Action Buttons - Responsive Grid */}
+                <div className="grid grid-cols-2 gap-3 mt-6">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRetry}
+                    className="bg-slate-700/50 border-slate-600 text-slate-300 hover:bg-slate-600/50 text-xs py-2"
                   >
-                    {isProcessing ? <>
-                        <Zap className="w-4 h-4 animate-pulse" />
-                        <span className="hidden sm:inline">Saving...</span>
-                        <span className="sm:hidden">Save</span>
-                      </> : <>
-                        <Check className="w-4 h-4" />
-                        <span className="hidden sm:inline">Save {transcriptionResult.extractedTasks?.length || 1} Task{transcriptionResult.extractedTasks?.length !== 1 ? 's' : ''}</span>
-                        <span className="sm:hidden">Save</span>
-                      </>}
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    Try Again
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleForceAccept}
+                    className="bg-green-500/20 border-green-500/40 text-green-300 hover:bg-green-500/30 text-xs py-2"
+                  >
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Force Fix
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCustomEdit}
+                    className="bg-blue-500/20 border-blue-500/40 text-blue-300 hover:bg-blue-500/30 text-xs py-2"
+                  >
+                    <Wrench className="w-3 h-3 mr-1" />
+                    Custom Edit
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copyToClipboard}
+                    className="bg-purple-500/20 border-purple-500/40 text-purple-300 hover:bg-purple-500/30 text-xs py-2"
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy Text
+                  </Button>
+                </div>
+
+                {/* Audio Controls */}
+                <div className="flex items-center justify-center space-x-4 pt-4 border-t border-slate-600">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={playAudio}
+                    disabled={isPlaying}
+                    className="text-slate-300 hover:text-white"
+                  >
+                    <Volume2 className="w-4 h-4 mr-2" />
+                    {isPlaying ? 'Playing...' : 'Play Audio'}
                   </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
-        </div>}
-
-      <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-400/50 to-transparent" />
-    </div>;
+        </div>
+      )}
+    </div>
+  );
 };
