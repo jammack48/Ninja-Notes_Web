@@ -34,6 +34,19 @@ interface TranscriptionResult {
   timings: Record<string, number>;
 }
 
+// Helper function to safely convert Json to contact info
+const convertToContactInfo = (contactInfo: any): { name?: string; phone?: string; email?: string; } | undefined => {
+  if (!contactInfo || typeof contactInfo !== 'object') {
+    return undefined;
+  }
+  
+  return {
+    name: typeof contactInfo.name === 'string' ? contactInfo.name : undefined,
+    phone: typeof contactInfo.phone === 'string' ? contactInfo.phone : undefined,
+    email: typeof contactInfo.email === 'string' ? contactInfo.email : undefined,
+  };
+};
+
 export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   onTaskCreated,
   onSwitchToTasks,
@@ -221,7 +234,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         }
       }
 
-      // Create Task object for the UI
+      // Create Task object for the UI with proper type conversion
       const newTask: Task = {
         id: task.id,
         title: task.title,
@@ -232,7 +245,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         createdAt: task.created_at,
         actionType: task.action_type as 'reminder' | 'call' | 'text' | 'email' | 'note',
         scheduledFor: task.scheduled_for || undefined,
-        contactInfo: task.contact_info || undefined,
+        contactInfo: convertToContactInfo(task.contact_info), // Use helper function for safe conversion
       };
 
       // Only call onTaskCreated for non-reminder tasks or immediate tasks
@@ -439,7 +452,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                   )}
                 </div>
 
-                {/* Action Buttons - Responsive Grid */}
+                {/* Action Buttons - 2x2 Grid for Mobile */}
                 <div className="grid grid-cols-2 gap-3 mt-6">
                   <Button
                     variant="outline"
