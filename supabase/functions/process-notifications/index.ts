@@ -33,7 +33,9 @@ serve(async (req) => {
           id,
           title,
           description,
-          contact_info
+          contact_info,
+          priority,
+          action_type
         )
       `)
       .eq('status', 'pending')
@@ -51,11 +53,33 @@ serve(async (req) => {
       console.log(`⚡ Processing action: ${action.action_type} for task: ${action.tasks?.title}`);
       
       try {
-        // Here we would trigger different types of notifications
-        // For now, we'll just log and mark as completed
-        
         let notificationSent = false;
         const notifications = [];
+
+        // For reminders, create a visible task in the main task list
+        if (action.action_type === 'reminder') {
+          console.log('📝 Creating visible reminder task');
+          
+          // Create a new task that will appear in the task list
+          const { error: taskError } = await supabase
+            .from('tasks')
+            .insert([{
+              title: `🔔 ${action.tasks?.title}`,
+              description: `Reminder: ${action.tasks?.description}`,
+              priority: action.tasks?.priority || 'medium',
+              completed: false,
+              action_type: 'note', // Make it a note so it shows up in the main list
+              contact_info: action.contact_info
+            }]);
+
+          if (taskError) {
+            console.error('❌ Failed to create reminder task:', taskError);
+          } else {
+            console.log('✅ Reminder task created successfully');
+            notificationSent = true;
+            notifications.push('task_created');
+          }
+        }
 
         // Web Push Notification (placeholder - would need actual implementation)
         if (action.notification_settings?.web_push) {

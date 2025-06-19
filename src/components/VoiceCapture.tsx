@@ -363,51 +363,15 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const handleSaveTranscript = async () => {
     setIsProcessing(true);
     addDebugLog(`Saving transcript and extracted tasks`);
+    
     try {
-      const tasksToSave = transcriptionResult.extractedTasks || [];
-      if (tasksToSave.length === 0) {
-        // Fallback: create a single task from the cleaned text
-        tasksToSave.push({
-          title: transcriptionResult.cleanedText?.substring(0, 50) + "..." || "Voice input task",
-          description: transcriptionResult.cleanedText || transcriptionResult.rawTranscription || "",
-          priority: 'medium' as const
-        });
-      }
-      addDebugLog(`Saving ${tasksToSave.length} tasks to Supabase...`);
-      for (const taskData of tasksToSave) {
-        const {
-          data,
-          error
-        } = await supabase.from('tasks').insert([{
-          title: taskData.title,
-          description: taskData.description,
-          priority: taskData.priority,
-          completed: false
-        }]).select().single();
-        if (error) {
-          addDebugLog(`Error saving task: ${JSON.stringify(error)}`);
-          throw error;
-        }
-        addDebugLog(`Task saved successfully: ${data.title}`);
-        const rawPriority = data.priority;
-        if (!['low', 'medium', 'high'].includes(rawPriority)) {
-          throw new Error(`Unexpected priority value "${rawPriority}" from database`);
-        }
-        const newTask: Task = {
-          id: data.id,
-          title: data.title,
-          description: data.description,
-          priority: rawPriority as Task['priority'],
-          dueDate: data.due_date,
-          completed: data.completed,
-          createdAt: data.created_at
-        };
-        onTaskCreated(newTask);
-      }
+      await createTaskFromTranscription(transcriptionResult);
+      
       toast({
         title: "Tasks saved successfully!",
-        description: `${tasksToSave.length} tasks extracted and saved. ${transcriptionResult.improvements || ''}`
+        description: `${transcriptionResult.extractedTasks?.length || 1} tasks created. ${transcriptionResult.improvements || ''}`
       });
+      
       setTranscriptionResult({});
       setShowTranscriptPopup(false);
       setTranscript('');
@@ -423,35 +387,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       });
     } finally {
       setIsProcessing(false);
-    }
-  };
-  const handleCancelTranscript = () => {
-    addDebugLog('Cancelling transcript');
-    setTranscriptionResult({});
-    setShowTranscriptPopup(false);
-    setTranscript('');
-    setPerformanceMetrics({});
-    setLastAudioBlob(null);
-    toast({
-      title: "Transcript Cancelled",
-      description: "Your transcription has been discarded."
-    });
-  };
-  const handleRecordingToggle = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
-  const getConfidenceColor = (confidence?: string) => {
-    switch (confidence) {
-      case 'high':
-        return 'text-emerald-400 border-emerald-500/30 bg-emerald-900/20';
-      case 'low':
-        return 'text-yellow-400 border-yellow-500/30 bg-yellow-900/20';
-      default:
-        return 'text-cyan-400 border-cyan-500/30 bg-cyan-900/20';
     }
   };
 
@@ -501,12 +436,58 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         reminderSettings: { web_push: true }
       };
 
-      await saveTaskToDatabase(task);
+      // For reminders with scheduled times, don't show them in the main task list immediately
+      // They should only appear when the scheduled time arrives
+      if (task.actionType === 'reminder' && task.scheduledFor) {
+        await saveReminderToDatabase(task);
+      } else {
+        await saveTaskToDatabase(task);
+      }
 
       // Create scheduled action if there's a scheduled time
       if (task.scheduledFor && task.actionType && task.actionType !== 'note') {
         await createScheduledAction(task);
       }
+    }
+  };
+
+  const saveReminderToDatabase = async (task: Task) => {
+    try {
+      console.log('Saving reminder to database (will not appear in task list until scheduled time):', task);
+      
+      // Save to database but don't add to the main task list yet
+      const { data, error } = await supabase.from('tasks').insert([
+        {
+          title: task.title,
+          description: task.description,
+          priority: task.priority,
+          completed: task.completed,
+          action_type: task.actionType || 'reminder',
+          scheduled_for: task.scheduledFor,
+          contact_info: task.contactInfo || null,
+          reminder_settings: task.reminderSettings || { web_push: true }
+        }
+      ]).select().single();
+
+      if (error) {
+        throw error;
+      }
+
+      console.log('✅ Reminder saved successfully (scheduled for later):', data);
+      
+      // Don't call onTaskCreated for scheduled reminders - they should only appear when due
+      toast({
+        title: "Reminder Scheduled",
+        description: `Reminder set for ${new Date(task.scheduledFor!).toLocaleString()}`,
+      });
+
+    } catch (error) {
+      console.error('❌ Error saving reminder:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save reminder. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -569,7 +550,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           action_type: task.actionType,
           scheduled_for: task.scheduledFor,
           contact_info: task.contactInfo || null,
-          notification_settings: task.reminderSettings || { web_push: true }
+          notification_settings: task.reminderSettings || { web_push: true, email: false, sms: false }
         }
       ]);
 
@@ -578,11 +559,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       }
 
       console.log('✅ Scheduled action created successfully');
-      
-      toast({
-        title: "Action Scheduled",
-        description: `${task.actionType} scheduled for ${new Date(task.scheduledFor!).toLocaleString()}`,
-      });
 
     } catch (error) {
       console.error('❌ Error creating scheduled action:', error);
@@ -591,6 +567,38 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         description: "Task created but scheduling failed.",
         variant: "destructive"
       });
+    }
+  };
+
+  const handleCancelTranscript = () => {
+    addDebugLog('Cancelling transcript');
+    setTranscriptionResult({});
+    setShowTranscriptPopup(false);
+    setTranscript('');
+    setPerformanceMetrics({});
+    setLastAudioBlob(null);
+    toast({
+      title: "Transcript Cancelled",
+      description: "Your transcription has been discarded."
+    });
+  };
+
+  const handleRecordingToggle = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const getConfidenceColor = (confidence?: string) => {
+    switch (confidence) {
+      case 'high':
+        return 'text-emerald-400 border-emerald-500/30 bg-emerald-900/20';
+      case 'low':
+        return 'text-yellow-400 border-yellow-500/30 bg-yellow-900/20';
+      default:
+        return 'text-cyan-400 border-cyan-500/30 bg-cyan-900/20';
     }
   };
 
