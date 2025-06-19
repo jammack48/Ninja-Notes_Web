@@ -210,9 +210,12 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
       console.log('Task created successfully:', task);
 
-      // For reminders, create a scheduled action
+      // For reminders, create a scheduled action - but ensure task exists first
       if (taskData.actionType === 'reminder' && taskData.scheduledFor && task) {
-        console.log('Creating scheduled action for reminder');
+        console.log('Creating scheduled action for reminder with task_id:', task.id);
+        
+        // Add a small delay to ensure task is fully committed
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         const { data: scheduledAction, error: scheduledError } = await supabase
           .from('scheduled_actions')
@@ -220,7 +223,12 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             task_id: task.id,
             action_type: taskData.actionType,
             scheduled_for: taskData.scheduledFor,
-            contact_info: taskData.contactInfo,
+            contact_info: taskData.contactInfo || null,
+            notification_settings: {
+              web_push: true,
+              email: false,
+              sms: false
+            },
             status: 'pending'
           }])
           .select()
@@ -229,8 +237,17 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         if (scheduledError) {
           console.error('Error creating scheduled action:', scheduledError);
           // Don't throw here - the task was created successfully
+          toast({
+            title: "Warning",
+            description: "Task created but reminder scheduling failed. Please check the task list.",
+            variant: "destructive"
+          });
         } else {
           console.log('Scheduled action created successfully:', scheduledAction);
+          toast({
+            title: "Reminder Scheduled",
+            description: `Reminder set for ${new Date(taskData.scheduledFor).toLocaleString()}`,
+          });
         }
       }
 
