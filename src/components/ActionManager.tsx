@@ -31,7 +31,26 @@ export const ActionManager: React.FC = () => {
       if (error) throw error;
 
       console.log('Fetched scheduled actions:', data);
-      setScheduledActions(data || []);
+      
+      // Properly cast the database response to our ScheduledAction interface
+      const typedActions: ScheduledAction[] = (data || []).map((action: any) => ({
+        id: action.id,
+        task_id: action.task_id,
+        action_type: action.action_type as 'reminder' | 'call' | 'text' | 'email' | 'note',
+        scheduled_for: action.scheduled_for,
+        contact_info: action.contact_info ? action.contact_info as { name?: string; phone?: string; email?: string } : undefined,
+        notification_settings: {
+          web_push: action.notification_settings?.web_push ?? true,
+          email: action.notification_settings?.email ?? false,
+          sms: action.notification_settings?.sms ?? false
+        },
+        status: action.status as 'pending' | 'completed' | 'failed',
+        created_at: action.created_at,
+        updated_at: action.updated_at,
+        tasks: action.tasks
+      }));
+      
+      setScheduledActions(typedActions);
     } catch (error) {
       console.error('Error fetching scheduled actions:', error);
       toast({

@@ -475,16 +475,29 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     console.log('Creating tasks from extracted data:', result.extractedTasks);
 
     for (const extractedTask of result.extractedTasks) {
+      // Properly cast the extracted task properties to our Task interface types
+      const priority = ['low', 'medium', 'high'].includes(extractedTask.priority) 
+        ? extractedTask.priority as 'low' | 'medium' | 'high' 
+        : 'medium';
+      
+      const actionType = ['reminder', 'call', 'text', 'email', 'note'].includes(extractedTask.actionType)
+        ? extractedTask.actionType as 'reminder' | 'call' | 'text' | 'email' | 'note'
+        : 'note';
+
       const task: Task = {
         id: crypto.randomUUID(),
         title: extractedTask.title || result.cleanedText.slice(0, 50),
         description: extractedTask.description || result.cleanedText,
-        priority: extractedTask.priority || 'medium',
+        priority: priority,
         completed: false,
         createdAt: new Date().toISOString(),
-        actionType: extractedTask.actionType || 'note',
+        actionType: actionType,
         scheduledFor: extractedTask.scheduledFor || undefined,
-        contactInfo: extractedTask.contactInfo || undefined,
+        contactInfo: extractedTask.contactInfo ? {
+          name: extractedTask.contactInfo.name,
+          phone: extractedTask.contactInfo.phone,
+          email: extractedTask.contactInfo.email
+        } : undefined,
         reminderSettings: { web_push: true }
       };
 
@@ -525,13 +538,13 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         id: data.id,
         title: data.title,
         description: data.description,
-        priority: data.priority,
+        priority: data.priority as 'low' | 'medium' | 'high',
         completed: data.completed,
         createdAt: data.created_at,
-        actionType: data.action_type,
+        actionType: data.action_type as 'reminder' | 'call' | 'text' | 'email' | 'note',
         scheduledFor: data.scheduled_for,
-        contactInfo: data.contact_info,
-        reminderSettings: data.reminder_settings
+        contactInfo: data.contact_info ? data.contact_info as { name?: string; phone?: string; email?: string } : undefined,
+        reminderSettings: data.reminder_settings ? data.reminder_settings as { web_push?: boolean; email?: boolean; sms?: boolean } : undefined
       };
 
       onTaskCreated(savedTask);
