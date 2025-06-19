@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Mic, Calendar, Trash2, CheckCircle2, Circle, Zap, Brain, ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,8 +23,79 @@ export const TaskList: React.FC<TaskListProps> = ({
   onSwitchToMic
 }) => {
   const { toast } = useToast();
-  const incompleteTasks = tasks.filter(task => !task.completed);
-  const completedTasks = tasks.filter(task => task.completed);
+  const [dbTasks, setDbTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch tasks from Supabase
+  const fetchTasks = async () => {
+    try {
+      console.log('Fetching tasks from Supabase...');
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      console.log('Fetched tasks from database:', data);
+      
+      // Convert database format to our Task interface
+      const formattedTasks: Task[] = data.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description || undefined,
+        priority: (task.priority as 'low' | 'medium' | 'high') || 'medium',
+        dueDate: task.due_date || undefined,
+        completed: task.completed,
+        createdAt: task.created_at
+      }));
+
+      setDbTasks(formattedTasks);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load tasks from database.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Set up real-time subscription
+  useEffect(() => {
+    fetchTasks();
+
+    // Subscribe to real-time changes
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tasks'
+        },
+        (payload) => {
+          console.log('Real-time update received:', payload);
+          fetchTasks(); // Refetch tasks when changes occur
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('Cleaning up real-time subscription');
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Use database tasks instead of prop tasks
+  const allTasks = dbTasks;
+  const incompleteTasks = allTasks.filter(task => !task.completed);
+  const completedTasks = allTasks.filter(task => task.completed);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -39,17 +110,62 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
+  const handleToggleTask = async (taskId: string) => {
+    try {
+      const task = allTasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({ completed: !task.completed })
+        .eq('id', taskId);
+
+      if (error) {
+        throw error;
+      }
+
+      console.log('Task toggled successfully');
+      // Real-time subscription will handle the UI update
+    } catch (error) {
+      console.error('Error toggling task:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update task. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleDoneTask = async (taskId: string) => {
     try {
       const { error } = await supabase.from('tasks').delete().eq('id', taskId);
       if (error) {
         throw error;
       }
-      onDeleteTask(taskId);
+      
       toast({
         title: "Task completed!",
         description: "Task has been marked as done and removed."
       });
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete task. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+      if (error) {
+        throw error;
+      }
+      
+      console.log('Task deleted successfully');
+      // Real-time subscription will handle the UI update
     } catch (error) {
       console.error('Error deleting task:', error);
       toast({
@@ -67,7 +183,7 @@ export const TaskList: React.FC<TaskListProps> = ({
           <div className="mt-1">
             <Checkbox 
               checked={task.completed} 
-              onCheckedChange={() => onToggleTask(task.id)} 
+              onCheckedChange={() => handleToggleTask(task.id)} 
               className="data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500 border-cyan-500/50 text-white" 
             />
           </div>
@@ -107,7 +223,7 @@ export const TaskList: React.FC<TaskListProps> = ({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => onDeleteTask(task.id)}
+                  onClick={() => handleDeleteTask(task.id)}
                   className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-2 h-auto transition-all duration-300"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -119,6 +235,17 @@ export const TaskList: React.FC<TaskListProps> = ({
       </CardContent>
     </Card>
   );
+
+  if (loading) {
+    return (
+      <div className="h-full flex flex-col bg-gradient-to-br from-slate-900/90 via-indigo-950/90 to-slate-900/90 relative">
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400 mb-4"></div>
+          <p className="text-slate-300/80">Loading messages...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col bg-gradient-to-br from-slate-900/90 via-indigo-950/90 to-slate-900/90 relative">
@@ -139,7 +266,7 @@ export const TaskList: React.FC<TaskListProps> = ({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {tasks.length === 0 ? (
+        {allTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full p-8 text-center">
             <h3 className="text-xl font-semibold text-white mb-3 bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
               No messages yet
