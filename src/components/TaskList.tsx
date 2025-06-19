@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Task } from '@/types/Task';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+import { ActionManager } from './ActionManager';
 
 interface TaskListProps {
   tasks: Task[];
@@ -428,6 +429,9 @@ export const TaskList: React.FC<TaskListProps> = ({
           </div>
         ) : (
           <div className="p-6 space-y-6">
+            {/* Scheduled Actions Section */}
+            <ActionManager />
+
             {/* Active Tasks */}
             {incompleteTasks.length > 0 && (
               <div>

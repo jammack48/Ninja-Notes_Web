@@ -454,6 +454,133 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         return 'text-cyan-400 border-cyan-500/30 bg-cyan-900/20';
     }
   };
+
+  const createTaskFromTranscription = async (result: any) => {
+    if (!result.extractedTasks || result.extractedTasks.length === 0) {
+      console.log('No tasks extracted, creating simple task');
+      const simpleTask: Task = {
+        id: crypto.randomUUID(),
+        title: result.cleanedText.slice(0, 100),
+        description: result.cleanedText,
+        priority: 'medium',
+        completed: false,
+        createdAt: new Date().toISOString(),
+        actionType: 'note'
+      };
+      
+      await saveTaskToDatabase(simpleTask);
+      return;
+    }
+
+    console.log('Creating tasks from extracted data:', result.extractedTasks);
+
+    for (const extractedTask of result.extractedTasks) {
+      const task: Task = {
+        id: crypto.randomUUID(),
+        title: extractedTask.title || result.cleanedText.slice(0, 50),
+        description: extractedTask.description || result.cleanedText,
+        priority: extractedTask.priority || 'medium',
+        completed: false,
+        createdAt: new Date().toISOString(),
+        actionType: extractedTask.actionType || 'note',
+        scheduledFor: extractedTask.scheduledFor || undefined,
+        contactInfo: extractedTask.contactInfo || undefined,
+        reminderSettings: { web_push: true }
+      };
+
+      await saveTaskToDatabase(task);
+
+      // Create scheduled action if there's a scheduled time
+      if (task.scheduledFor && task.actionType && task.actionType !== 'note') {
+        await createScheduledAction(task);
+      }
+    }
+  };
+
+  const saveTaskToDatabase = async (task: Task) => {
+    try {
+      console.log('Saving task to database:', task);
+      
+      const { data, error } = await supabase.from('tasks').insert([
+        {
+          title: task.title,
+          description: task.description,
+          priority: task.priority,
+          completed: task.completed,
+          action_type: task.actionType || 'note',
+          scheduled_for: task.scheduledFor || null,
+          contact_info: task.contactInfo || null,
+          reminder_settings: task.reminderSettings || { web_push: true }
+        }
+      ]).select().single();
+
+      if (error) {
+        throw error;
+      }
+
+      console.log('✅ Task saved successfully:', data);
+      
+      // Convert back to Task interface and notify parent
+      const savedTask: Task = {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        priority: data.priority,
+        completed: data.completed,
+        createdAt: data.created_at,
+        actionType: data.action_type,
+        scheduledFor: data.scheduled_for,
+        contactInfo: data.contact_info,
+        reminderSettings: data.reminder_settings
+      };
+
+      onTaskCreated(savedTask);
+
+    } catch (error) {
+      console.error('❌ Error saving task:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save task. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const createScheduledAction = async (task: Task) => {
+    try {
+      console.log('Creating scheduled action for task:', task.id);
+
+      const { error } = await supabase.from('scheduled_actions').insert([
+        {
+          task_id: task.id,
+          action_type: task.actionType,
+          scheduled_for: task.scheduledFor,
+          contact_info: task.contactInfo || null,
+          notification_settings: task.reminderSettings || { web_push: true }
+        }
+      ]);
+
+      if (error) {
+        throw error;
+      }
+
+      console.log('✅ Scheduled action created successfully');
+      
+      toast({
+        title: "Action Scheduled",
+        description: `${task.actionType} scheduled for ${new Date(task.scheduledFor!).toLocaleString()}`,
+      });
+
+    } catch (error) {
+      console.error('❌ Error creating scheduled action:', error);
+      toast({
+        title: "Warning",
+        description: "Task created but scheduling failed.",
+        variant: "destructive"
+      });
+    }
+  };
+
   return <div className="h-full flex flex-col relative overflow-hidden bg-gradient-to-br from-slate-900/90 via-indigo-950/90 to-slate-900/90">
       {/* Futuristic background pattern */}
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />

@@ -45,34 +45,90 @@ export type Database = {
         }
         Relationships: []
       }
+      scheduled_actions: {
+        Row: {
+          action_type: string
+          contact_info: Json | null
+          created_at: string
+          id: string
+          notification_settings: Json | null
+          scheduled_for: string
+          status: string
+          task_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          action_type: string
+          contact_info?: Json | null
+          created_at?: string
+          id?: string
+          notification_settings?: Json | null
+          scheduled_for: string
+          status?: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          action_type?: string
+          contact_info?: Json | null
+          created_at?: string
+          id?: string
+          notification_settings?: Json | null
+          scheduled_for?: string
+          status?: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_actions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
+          action_type: string | null
           completed: boolean
+          contact_info: Json | null
           created_at: string
           description: string | null
           due_date: string | null
           id: string
           priority: string | null
+          reminder_settings: Json | null
+          scheduled_for: string | null
           title: string
           updated_at: string
         }
         Insert: {
+          action_type?: string | null
           completed?: boolean
+          contact_info?: Json | null
           created_at?: string
           description?: string | null
           due_date?: string | null
           id?: string
           priority?: string | null
+          reminder_settings?: Json | null
+          scheduled_for?: string | null
           title: string
           updated_at?: string
         }
         Update: {
+          action_type?: string | null
           completed?: boolean
+          contact_info?: Json | null
           created_at?: string
           description?: string | null
           due_date?: string | null
           id?: string
           priority?: string | null
+          reminder_settings?: Json | null
+          scheduled_for?: string | null
           title?: string
           updated_at?: string
         }
@@ -104,7 +160,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      process_due_actions: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
