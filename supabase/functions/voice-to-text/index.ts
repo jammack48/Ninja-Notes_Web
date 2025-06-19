@@ -1,69 +1,53 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
 
-// Enhanced timing utility
 class ProcessingTimer {
-  private startTime: number;
-  private stages: { [key: string]: number } = {};
-
+  startTime;
+  stages = {};
   constructor() {
     this.startTime = Date.now();
   }
-
-  markStage(stageName: string) {
+  markStage(stageName) {
     const now = Date.now();
     this.stages[stageName] = now - this.startTime;
     console.log(`⏱️ Stage "${stageName}" completed in ${this.stages[stageName]}ms`);
     return this.stages[stageName];
   }
-
   getTotalTime() {
     return Date.now() - this.startTime;
   }
-
   getAllTimings() {
-    return {
-      ...this.stages,
-      totalTime: this.getTotalTime()
-    };
+    return { ...this.stages, totalTime: this.getTotalTime() };
   }
 }
 
-// Process base64 in chunks to prevent memory issues
-function processBase64Chunks(base64String: string, chunkSize = 32768) {
+function processBase64Chunks(base64String, chunkSize = 32768) {
   console.log(`🔄 Processing base64 string of length: ${base64String.length}`);
-  const chunks: Uint8Array[] = [];
+  const chunks = [];
   let position = 0;
-  
   while (position < base64String.length) {
     const chunk = base64String.slice(position, position + chunkSize);
     const binaryChunk = atob(chunk);
     const bytes = new Uint8Array(binaryChunk.length);
-    
     for (let i = 0; i < binaryChunk.length; i++) {
       bytes[i] = binaryChunk.charCodeAt(i);
     }
-    
     chunks.push(bytes);
     position += chunkSize;
   }
-
   const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
   const result = new Uint8Array(totalLength);
   let offset = 0;
-
   for (const chunk of chunks) {
     result.set(chunk, offset);
     offset += chunk.length;
   }
-
   console.log(`✅ Processed audio binary of size: ${result.length} bytes`);
   return result;
 }
@@ -77,120 +61,40 @@ serve(async (req) => {
   const timer = new ProcessingTimer();
 
   try {
-    const { audio, forceAggressiveCorrection = false } = await req.json();
+    const { audio } = await req.json();
     timer.markStage('request_parsed');
-    
-    if (!audio) {
-      console.error('❌ No audio data provided in request');
-      throw new Error('No audio data provided');
-    }
 
-    console.log(`📊 Audio data received, length: ${audio.length}`);
+    if (!audio) throw new Error('No audio data provided');
 
-    // Check if OpenAI API key is available
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openaiKey) {
-      console.error('❌ OPENAI_API_KEY environment variable not set');
-      throw new Error('OpenAI API key not configured. Please check your Supabase Edge Function secrets.');
-    }
+    if (!openaiKey) throw new Error('OpenAI API key not configured.');
 
-    console.log('🔑 OpenAI API key found, starting processing...');
-
-    // STAGE 1: WHISPER TRANSCRIPTION
-    console.log('🎯 STAGE 1: Starting Whisper transcription...');
     const binaryAudio = processBase64Chunks(audio);
     timer.markStage('audio_processed');
-    
-    // Prepare form data for OpenAI Whisper
+
     const formData = new FormData();
     const blob = new Blob([binaryAudio], { type: 'audio/webm' });
     formData.append('file', blob, 'audio.webm');
     formData.append('model', 'whisper-1');
     timer.markStage('formdata_prepared');
 
-    console.log('📡 Sending request to OpenAI Whisper API...');
-
-    // Send to OpenAI Whisper API
     const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiKey}`,
-      },
-      body: formData,
+      headers: { 'Authorization': `Bearer ${openaiKey}` },
+      body: formData
     });
 
     const whisperTime = timer.markStage('whisper_completed');
-    console.log(`📈 Whisper API response status: ${whisperResponse.status}`);
-
-    if (!whisperResponse.ok) {
-      const errorText = await whisperResponse.text();
-      console.error('❌ Whisper API error response:', errorText);
-      throw new Error(`Whisper API error (${whisperResponse.status}): ${errorText}`);
-    }
-
+    if (!whisperResponse.ok) throw new Error(await whisperResponse.text());
     const whisperResult = await whisperResponse.json();
     const rawTranscription = whisperResult.text;
-
     console.log('✅ Whisper transcription successful:', rawTranscription);
 
-    // STAGE 2: CHATGPT CLEANUP & ANALYSIS
-    console.log('🎯 STAGE 2: Starting ChatGPT cleanup and analysis...');
-    
-    // Initialize analysisResult with fallback values
-    let analysisResult = {
-      cleanedText: rawTranscription,
-      extractedTasks: [],
-      improvements: "No improvements applied",
-      confidence: "medium",
-      potentialErrors: []
-    };
-
-    // Initialize cost tracking
-    let totalTokens = 0;
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let estimatedCost = 0;
-    
-    // Enhanced ChatGPT prompt with aggressive error detection
-    const systemPrompt = forceAggressiveCorrection ? 
-      `You are an expert text processor that aggressively corrects speech-to-text transcription errors. The user has indicated the original transcription was likely wrong, so be very thorough in your corrections.
-
-CRITICAL: Look for these common speech-to-text errors:
-- Similar sounding words (Nigel → Nodule, Coal → Call, Beam → PM)
+    const systemPrompt = `IMPORTANT: Pay close attention to potential transcription errors. Look for:
+- Similar-sounding words (e.g. “Neck thirsty” vs “next Thursday”)
 - Missing articles, prepositions, or punctuation
-- Time expressions (12pm → 12 PM, at 12, etc.)
-- Names being misheard as common words
-- Phone numbers or dates being garbled
-
-Your job is to:
-1. Aggressively fix grammar, spelling, and transcription errors
-2. Correct obvious misheard words based on context
-3. Improve sentence structure and clarity while maintaining original intent
-4. Extract clear, actionable tasks if present
-5. Flag potential transcription errors you found
-6. Assign a confidence level: "high", "medium", or "low"
-
-Response format:
-{
-  "cleanedText": "The corrected version with aggressive fixes applied",
-  "extractedTasks": [
-    {
-      "title": "Task title",
-      "description": "Task description", 
-      "priority": "low|medium|high"
-    }
-  ],
-  "improvements": "Detailed description of corrections made",
-  "confidence": "high|medium|low",
-  "potentialErrors": ["List of potential transcription errors found"]
-}` :
-      `You are an expert text processor that cleans up speech-to-text transcriptions and extracts actionable tasks.
-
-IMPORTANT: Pay close attention to potential transcription errors. Look for:
-- Nonsensical word combinations that might be misheard speech
-- Names that sound like common words (Nigel → Nodule, etc.)
-- Time expressions that seem garbled (12pm, noon, etc.)
-- Context clues that suggest different words were intended
+- Garbled time expressions (12pm, at 12, etc.)
+- Names misheard as common words
 
 Your job is to:
 1. Fix grammar, spelling, and obvious transcription errors
@@ -200,70 +104,44 @@ Your job is to:
 5. Flag when you suspect transcription errors
 6. Assess confidence in the transcription accuracy
 
-Response format:
+Response format (JSON):
 {
-  "cleanedText": "The improved, grammatically correct version",
-  "extractedTasks": [
-    {
-      "title": "Task title",
-      "description": "Task description",
-      "priority": "low|medium|high"
-    }
-  ],
-  "improvements": "Description of what was improved",
-  "confidence": "high|medium|low - your confidence in transcription accuracy",
-  "potentialErrors": ["List any words/phrases that seem like transcription errors"]
+  "cleanedText": "...",
+  "extractedTasks": [{ "title": "", "description": "", "priority": "" }],
+  "improvements": "...",
+  "confidence": "high|medium|low",
+  "potentialErrors": ["..."]
 }`;
 
     const chatgptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openaiKey}`,
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: 'gpt-4',
         messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: `Please analyze and clean up this speech-to-text transcription: "${rawTranscription}"`
-          }
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Please analyze and clean up this speech-to-text transcription: "${rawTranscription}"` }
         ],
         temperature: 0.3,
         max_tokens: 1000
-      }),
+      })
     });
 
     const chatgptTime = timer.markStage('chatgpt_completed');
-    console.log(`📈 ChatGPT API response status: ${chatgptResponse.status}`);
 
-    if (!chatgptResponse.ok) {
-      const errorText = await chatgptResponse.text();
-      console.error('❌ ChatGPT API error response:', errorText);
-      console.log('⚠️ Falling back to raw Whisper transcription');
-      timer.markStage('fallback_applied');
-    } else {
+    let analysisResult = {
+      cleanedText: rawTranscription,
+      extractedTasks: [],
+      improvements: "No improvements applied",
+      confidence: "medium",
+      potentialErrors: []
+    };
+
+    if (chatgptResponse.ok) {
       const chatgptResult = await chatgptResponse.json();
-      
-      // Extract token usage and calculate cost
-      if (chatgptResult.usage) {
-        totalTokens = chatgptResult.usage.total_tokens;
-        promptTokens = chatgptResult.usage.prompt_tokens;
-        completionTokens = chatgptResult.usage.completion_tokens;
-        
-        // GPT-4 pricing (as of 2024): $0.03 per 1K prompt tokens, $0.06 per 1K completion tokens
-        const promptCost = (promptTokens / 1000) * 0.03;
-        const completionCost = (completionTokens / 1000) * 0.06;
-        estimatedCost = promptCost + completionCost;
-        
-        console.log(`💰 Token usage - Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
-        console.log(`💰 Estimated cost: $${estimatedCost.toFixed(4)} (Prompt: $${promptCost.toFixed(4)}, Completion: $${completionCost.toFixed(4)})`);
-      }
-      
       try {
         const parsedResult = JSON.parse(chatgptResult.choices[0].message.content);
         analysisResult = {
@@ -272,116 +150,57 @@ Response format:
           potentialErrors: parsedResult.potentialErrors || []
         };
         console.log('✅ ChatGPT analysis successful:', analysisResult);
-      } catch (parseError) {
+      } catch {
         console.error('❌ Failed to parse ChatGPT response, using fallback');
-        // analysisResult already has fallback values
       }
-      timer.markStage('analysis_parsed');
+    } else {
+      console.warn('⚠️ ChatGPT failed, using raw transcription');
     }
 
-    // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('❌ Supabase configuration missing');
-      throw new Error('Supabase configuration not found');
-    }
+    if (!supabaseUrl || !supabaseKey) throw new Error('Supabase config missing');
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Save transcription to database
-    console.log('💾 Saving transcription to database...');
-    const { data, error } = await supabase
-      .from('transcriptions')
-      .insert([{
+    const { data, error } = await supabase.from('transcriptions').insert([
+      {
         text: analysisResult.cleanedText,
         audio_length: binaryAudio.length,
         created_at: new Date().toISOString()
-      }])
-      .select()
-      .single();
-
-    const dbTime = timer.markStage('database_saved');
-
-    if (error) {
-      console.error('❌ Database error:', error);
-      console.log('⚠️ Continuing despite database error...');
-    } else {
-      console.log('✅ Transcription saved to database:', data);
-    }
-
-    const totalTime = timer.getTotalTime();
-    const timings = timer.getAllTimings();
-
-    console.log('📊 PROCESSING COMPLETE - Performance Summary:');
-    console.log(`   Total Time: ${totalTime}ms`);
-    console.log(`   Whisper Time: ${whisperTime}ms`);
-    console.log(`   ChatGPT Time: ${chatgptTime}ms`);
-    console.log(`   Database Time: ${dbTime}ms`);
-    console.log(`💰 Cost Summary: $${estimatedCost.toFixed(4)} (${totalTokens} tokens)`);
-
-    return new Response(
-      JSON.stringify({ 
-        rawTranscription,
-        cleanedText: analysisResult.cleanedText,
-        extractedTasks: analysisResult.extractedTasks,
-        improvements: analysisResult.improvements,
-        confidence: analysisResult.confidence,
-        potentialErrors: analysisResult.potentialErrors,
-        id: data?.id || null,
-        success: true,
-        timings,
-        processingStages: {
-          whisperTime: `${whisperTime}ms`,
-          chatgptTime: `${chatgptTime}ms`,
-          databaseTime: `${dbTime}ms`,
-          totalTime: `${totalTime}ms`
-        },
-        tokenUsage: {
-          totalTokens,
-          promptTokens,
-          completionTokens,
-          estimatedCost: `$${estimatedCost.toFixed(4)}`
-        }
-      }),
-      { 
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        } 
       }
-    );
+    ]).select().single();
+
+    timer.markStage('database_saved');
+
+    if (error) console.warn('⚠️ Supabase insert failed:', error);
+
+    const timings = timer.getAllTimings();
+    return new Response(JSON.stringify({
+      rawTranscription,
+      ...analysisResult,
+      id: data?.id || null,
+      success: true,
+      timings
+    }), {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      }
+    });
 
   } catch (error) {
-    const errorTime = timer.getTotalTime();
-    console.error(`❌ Error in voice-to-text function after ${errorTime}ms:`, error);
-    
-    // Provide more specific error messages
-    let errorMessage = error.message;
-    if (error.message.includes('API key')) {
-      errorMessage = 'OpenAI API key not configured. Please check your Supabase Edge Function secrets.';
-    } else if (error.message.includes('OpenAI service')) {
-      errorMessage = 'OpenAI service error. Please try again later.';
-    } else if (error.message.includes('No audio data')) {
-      errorMessage = 'No audio data received. Please try recording again.';
-    }
-
-    return new Response(
-      JSON.stringify({ 
-        error: errorMessage,
-        success: false,
-        details: error.message,
-        timings: timer.getAllTimings(),
-        processingTime: `${errorTime}ms`
-      }),
-      {
-        status: 500,
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        },
+    const timings = timer.getAllTimings();
+    console.error('❌ Error:', error.message);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      timings
+    }), {
+      status: 500,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
       }
-    );
+    });
   }
 });
