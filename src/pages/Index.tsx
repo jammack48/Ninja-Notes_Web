@@ -5,20 +5,69 @@ import { LockScreen } from '@/components/LockScreen';
 import { Task } from '@/types/Task';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mic, List } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const Index = () => {
   // Initialize lock screen to show first on published sites
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<'mic' | 'tasks'>('mic');
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [activeTaskCount, setActiveTaskCount] = useState(0);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const [touchEnd, setTouchEnd] = useState<{ x: number; y: number } | null>(null);
 
   const minSwipeDistance = 50;
 
+  // Fetch active task count from database
+  const fetchActiveTaskCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('completed', false);
+
+      if (error) {
+        console.error('Error fetching task count:', error);
+        return;
+      }
+
+      setActiveTaskCount(count || 0);
+    } catch (error) {
+      console.error('Error fetching active task count:', error);
+    }
+  };
+
+  // Set up real-time subscription for task count updates
+  useEffect(() => {
+    fetchActiveTaskCount();
+
+    // Subscribe to real-time changes for active task count
+    const channel = supabase
+      .channel('task-count-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tasks'
+        },
+        () => {
+          console.log('Task count update received');
+          fetchActiveTaskCount(); // Refetch count when tasks change
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('Cleaning up task count subscription');
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const addTask = (task: Task) => {
     console.log('Adding new task:', task);
     setTasks(prev => [task, ...prev]);
+    // Count will be updated via real-time subscription
   };
 
   const toggleTask = (id: string) => {
@@ -129,7 +178,7 @@ const Index = () => {
               className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-2 font-medium transition-all duration-200"
             >
               <List className="w-4 h-4" />
-              Messages ({tasks.length})
+              Messages ({activeTaskCount})
             </TabsTrigger>
           </TabsList>
           
@@ -144,7 +193,7 @@ const Index = () => {
           <VoiceCapture 
             onTaskCreated={addTask}
             onSwitchToTasks={() => setCurrentScreen('tasks')}
-            taskCount={tasks.length}
+            taskCount={activeTaskCount}
           />
         </TabsContent>
         

@@ -16,6 +16,17 @@ interface TaskListProps {
   onSwitchToMic: () => void;
 }
 
+interface CompletedTask {
+  id: string;
+  original_task_id: string;
+  title: string;
+  description?: string;
+  priority: 'low' | 'medium' | 'high';
+  due_date?: string;
+  completed_at: string;
+  created_at: string;
+}
+
 export const TaskList: React.FC<TaskListProps> = ({
   tasks,
   onToggleTask,
@@ -24,6 +35,7 @@ export const TaskList: React.FC<TaskListProps> = ({
 }) => {
   const { toast } = useToast();
   const [dbTasks, setDbTasks] = useState<Task[]>([]);
+  const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Fetch tasks from Supabase
@@ -60,18 +72,46 @@ export const TaskList: React.FC<TaskListProps> = ({
         description: "Failed to load tasks from database.",
         variant: "destructive"
       });
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  // Fetch completed tasks from Supabase
+  const fetchCompletedTasks = async () => {
+    try {
+      console.log('Fetching completed tasks from Supabase...');
+      const { data, error } = await supabase
+        .from('completed_tasks')
+        .select('*')
+        .order('completed_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      console.log('Fetched completed tasks from database:', data);
+      setCompletedTasks(data || []);
+    } catch (error) {
+      console.error('Error fetching completed tasks:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load completed tasks from database.",
+        variant: "destructive"
+      });
     }
   };
 
   // Set up real-time subscription
   useEffect(() => {
-    fetchTasks();
+    const fetchData = async () => {
+      await Promise.all([fetchTasks(), fetchCompletedTasks()]);
+      setLoading(false);
+    };
 
-    // Subscribe to real-time changes
-    const channel = supabase
-      .channel('schema-db-changes')
+    fetchData();
+
+    // Subscribe to real-time changes for tasks
+    const tasksChannel = supabase
+      .channel('tasks-changes')
       .on(
         'postgres_changes',
         {
@@ -80,22 +120,39 @@ export const TaskList: React.FC<TaskListProps> = ({
           table: 'tasks'
         },
         (payload) => {
-          console.log('Real-time update received:', payload);
-          fetchTasks(); // Refetch tasks when changes occur
+          console.log('Tasks real-time update received:', payload);
+          fetchTasks();
+        }
+      )
+      .subscribe();
+
+    // Subscribe to real-time changes for completed tasks
+    const completedTasksChannel = supabase
+      .channel('completed-tasks-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'completed_tasks'
+        },
+        (payload) => {
+          console.log('Completed tasks real-time update received:', payload);
+          fetchCompletedTasks();
         }
       )
       .subscribe();
 
     return () => {
-      console.log('Cleaning up real-time subscription');
-      supabase.removeChannel(channel);
+      console.log('Cleaning up real-time subscriptions');
+      supabase.removeChannel(tasksChannel);
+      supabase.removeChannel(completedTasksChannel);
     };
   }, []);
 
   // Use database tasks instead of prop tasks
   const allTasks = dbTasks;
   const incompleteTasks = allTasks.filter(task => !task.completed);
-  const completedTasks = allTasks.filter(task => task.completed);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -125,7 +182,6 @@ export const TaskList: React.FC<TaskListProps> = ({
       }
 
       console.log('Task toggled successfully');
-      // Real-time subscription will handle the UI update
     } catch (error) {
       console.error('Error toggling task:', error);
       toast({
@@ -136,22 +192,48 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
-  const handleDoneTask = async (taskId: string) => {
+  const handleCompleteTask = async (taskId: string) => {
     try {
-      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-      if (error) {
-        throw error;
+      const task = allTasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      // First, insert into completed_tasks table
+      const { error: insertError } = await supabase
+        .from('completed_tasks')
+        .insert({
+          original_task_id: task.id,
+          title: task.title,
+          description: task.description,
+          priority: task.priority,
+          due_date: task.dueDate,
+          created_at: task.createdAt
+        });
+
+      if (insertError) {
+        throw insertError;
       }
-      
+
+      // Then, delete from tasks table
+      const { error: deleteError } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
       toast({
         title: "Task completed!",
-        description: "Task has been marked as done and removed."
+        description: "Task has been marked as complete and moved to completed tasks."
       });
+
+      console.log('Task completed and moved successfully');
     } catch (error) {
-      console.error('Error deleting task:', error);
+      console.error('Error completing task:', error);
       toast({
         title: "Error",
-        description: "Failed to delete task. Please try again.",
+        description: "Failed to complete task. Please try again.",
         variant: "destructive"
       });
     }
@@ -164,8 +246,12 @@ export const TaskList: React.FC<TaskListProps> = ({
         throw error;
       }
       
+      toast({
+        title: "Task deleted",
+        description: "Task has been permanently deleted."
+      });
+
       console.log('Task deleted successfully');
-      // Real-time subscription will handle the UI update
     } catch (error) {
       console.error('Error deleting task:', error);
       toast({
@@ -209,25 +295,57 @@ export const TaskList: React.FC<TaskListProps> = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {task.completed && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDoneTask(task.id)}
-                    className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-2 h-auto transition-all duration-300 flex items-center gap-1"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span className="text-xs">Done</span>
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleCompleteTask(task.id)}
+                  className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-2 h-auto transition-all duration-300 flex items-center gap-1"
+                  title="Mark as complete"
+                >
+                  <Check className="w-4 h-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => handleDeleteTask(task.id)}
                   className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-2 h-auto transition-all duration-300"
+                  title="Delete task"
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const CompletedTaskCard = ({ task }: { task: CompletedTask }) => (
+    <Card className="transition-all duration-500 border-0 shadow-lg bg-slate-800/20 backdrop-blur-xl border border-emerald-500/20 opacity-60">
+      <CardContent className="p-5">
+        <div className="flex items-start space-x-4">
+          <div className="mt-1">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-lg leading-tight text-slate-400 line-through">
+              {task.title}
+            </h3>
+            {task.description && (
+              <p className="text-sm mt-2 leading-relaxed text-slate-500">
+                {task.description}
+              </p>
+            )}
+            <div className="flex items-center justify-between mt-4">
+              <div className="flex items-center space-x-3">
+                <Badge variant="outline" className={`text-xs font-medium transition-all duration-300 ${getPriorityColor(task.priority)}`}>
+                  {task.priority}
+                </Badge>
+                <div className="flex items-center text-xs text-slate-500 bg-slate-700/30 px-2 py-1 rounded-full border border-slate-600/20">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Completed {new Date(task.completed_at).toLocaleDateString()}
+                </div>
               </div>
             </div>
           </div>
@@ -253,7 +371,6 @@ export const TaskList: React.FC<TaskListProps> = ({
       <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-cyan-500/10" />
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-400/50 to-transparent animate-pulse" />
       
-      {/* Header */}
       <div className="flex justify-between items-center p-6 pt-16 bg-slate-800/30 backdrop-blur-xl border-b border-cyan-500/20 relative z-10">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-white tracking-tight mb-1">Messages</h1>
@@ -266,7 +383,7 @@ export const TaskList: React.FC<TaskListProps> = ({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {allTasks.length === 0 ? (
+        {allTasks.length === 0 && completedTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full p-8 text-center">
             <h3 className="text-xl font-semibold text-white mb-3 bg-gradient-to-r from-cyan-200 to-purple-200 bg-clip-text text-transparent">
               No messages yet
@@ -277,7 +394,7 @@ export const TaskList: React.FC<TaskListProps> = ({
           </div>
         ) : (
           <div className="p-6 space-y-6">
-            {/* Incomplete Tasks */}
+            {/* Active Tasks */}
             {incompleteTasks.length > 0 && (
               <div>
                 <div className="flex items-center gap-3 mb-4">
@@ -307,7 +424,7 @@ export const TaskList: React.FC<TaskListProps> = ({
                 </div>
                 <div className="space-y-3">
                   {completedTasks.map(task => (
-                    <TaskCard key={task.id} task={task} />
+                    <CompletedTaskCard key={task.id} task={task} />
                   ))}
                 </div>
               </div>
