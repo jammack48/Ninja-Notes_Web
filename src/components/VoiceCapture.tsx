@@ -853,30 +853,53 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               
               <div className="flex items-center justify-between gap-3">
                 <div className="flex gap-2">
-                  {lastAudioBlob && <>
-                      <Button variant="outline" size="sm" onClick={() => retryTranscription(false)} disabled={isProcessing} className="flex items-center gap-2 border-blue-500/30 text-blue-300 hover:bg-blue-500/10 hover:border-blue-400/40">
+                  {lastAudioBlob && (
+                    <div className="grid grid-cols-2 gap-2 md:flex md:gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => retryTranscription(false)} 
+                        disabled={isProcessing} 
+                        className="flex items-center justify-center gap-2 border-blue-500/30 text-blue-300 hover:bg-blue-500/10 hover:border-blue-400/40"
+                      >
                         <RefreshCw className="w-4 h-4" />
-                        Try Again
+                        <span className="hidden sm:inline">Try Again</span>
+                        <span className="sm:hidden">Retry</span>
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => retryTranscription(true)} disabled={isProcessing} className="flex items-center gap-2 border-orange-500/30 text-orange-300 hover:bg-orange-500/10 hover:border-orange-400/40">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => retryTranscription(true)} 
+                        disabled={isProcessing} 
+                        className="flex items-center justify-center gap-2 border-orange-500/30 text-orange-300 hover:bg-orange-500/10 hover:border-orange-400/40"
+                      >
                         <Zap className="w-4 h-4" />
-                        Force Fix
+                        <span className="hidden sm:inline">Force Fix</span>
+                        <span className="sm:hidden">Fix</span>
                       </Button>
-                    </>}
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex gap-3">
-                  <Button variant="outline" size="sm" onClick={handleCancelTranscript} disabled={isProcessing} className="flex items-center gap-2 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:border-red-400/40">
+                  <Button variant="outline" size="sm" onClick={handleCancelTranscript} disabled={isProcessing} className="flex items-center justify-center gap-2 border-red-500/30 text-red-300 hover:bg-red-500/10 hover:border-red-400/40">
                     <X className="w-4 h-4" />
-                    Cancel
+                    <span>Cancel</span>
                   </Button>
-                  <Button size="sm" onClick={handleSaveTranscript} disabled={isProcessing} className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 shadow-lg hover:shadow-emerald-500/20 transition-all duration-300">
+                  <Button 
+                    size="sm" 
+                    onClick={handleSaveTranscript} 
+                    disabled={isProcessing} 
+                    className="flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 shadow-lg hover:shadow-emerald-500/20 transition-all duration-300"
+                  >
                     {isProcessing ? <>
                         <Zap className="w-4 h-4 animate-pulse" />
-                        Saving...
+                        <span className="hidden sm:inline">Saving...</span>
+                        <span className="sm:hidden">Save</span>
                       </> : <>
                         <Check className="w-4 h-4" />
-                        Save {transcriptionResult.extractedTasks?.length || 1} Task{transcriptionResult.extractedTasks?.length !== 1 ? 's' : ''}
+                        <span className="hidden sm:inline">Save {transcriptionResult.extractedTasks?.length || 1} Task{transcriptionResult.extractedTasks?.length !== 1 ? 's' : ''}</span>
+                        <span className="sm:hidden">Save</span>
                       </>}
                   </Button>
                 </div>
