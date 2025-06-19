@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Mic, Calendar, Trash2, CheckCircle2, Circle, Zap, Brain, ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -89,7 +88,20 @@ export const TaskList: React.FC<TaskListProps> = ({
       }
 
       console.log('Fetched completed tasks from database:', data);
-      setCompletedTasks(data || []);
+      
+      // Convert database format to our CompletedTask interface with proper type casting
+      const formattedCompletedTasks: CompletedTask[] = (data || []).map(task => ({
+        id: task.id,
+        original_task_id: task.original_task_id,
+        title: task.title,
+        description: task.description || undefined,
+        priority: (task.priority as 'low' | 'medium' | 'high') || 'medium',
+        due_date: task.due_date || undefined,
+        completed_at: task.completed_at,
+        created_at: task.created_at
+      }));
+
+      setCompletedTasks(formattedCompletedTasks);
     } catch (error) {
       console.error('Error fetching completed tasks:', error);
       toast({
