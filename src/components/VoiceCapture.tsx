@@ -461,7 +461,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       
       <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
         <div className="flex items-center gap-1 text-slate-400 text-xs font-medium">
-          <ChevronLeft className="w-4 h-4 animate-pulse" />
+          
           
         </div>
         
@@ -470,7 +470,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 md:hidden">
         <div className="flex items-center gap-1 text-cyan-300 text-xs font-medium">
           
-          <ChevronRight className="w-4 h-4 animate-pulse" />
+          
         </div>
         
       </div>
@@ -613,7 +613,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             Speak naturally: <span className="text-cyan-300">"Call Ryan tomorrow"</span> or <span className="text-purple-300">"Buy groceries this weekend"</span>
           </p>
           <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
-            <ArrowRight className="w-3 h-3" />
+            
           </div>
         </div>
       </div>
