@@ -37,6 +37,7 @@ export const TaskList: React.FC<TaskListProps> = ({
   const [dbTasks, setDbTasks] = useState<Task[]>([]);
   const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingTaskIds, setDeletingTaskIds] = useState<Set<string>>(new Set());
 
   // Fetch tasks from Supabase
   const fetchTasks = async () => {
@@ -113,61 +114,78 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
-  // Set up real-time subscription with better error handling
+  // Set up real-time subscription with improved error handling
   useEffect(() => {
     let tasksChannel: any;
     let completedTasksChannel: any;
+    let retryTimeout: NodeJS.Timeout;
 
     const setupSubscriptions = async () => {
-      // Initial data fetch
-      await Promise.all([fetchTasks(), fetchCompletedTasks()]);
-      setLoading(false);
+      try {
+        // Initial data fetch
+        await Promise.all([fetchTasks(), fetchCompletedTasks()]);
+        setLoading(false);
 
-      // Subscribe to real-time changes for tasks table
-      tasksChannel = supabase
-        .channel('public:tasks')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tasks'
-          },
-          (payload) => {
-            console.log('Tasks real-time update received:', payload);
-            // Force immediate refetch to ensure UI is in sync
-            fetchTasks();
-          }
-        )
-        .subscribe((status) => {
-          console.log('Tasks subscription status:', status);
-        });
+        // Subscribe to real-time changes for tasks table with unique channel names
+        tasksChannel = supabase
+          .channel(`tasks-${Date.now()}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'tasks'
+            },
+            (payload) => {
+              console.log('Tasks real-time update received:', payload);
+              fetchTasks();
+            }
+          )
+          .subscribe((status, err) => {
+            console.log('Tasks subscription status:', status);
+            if (err) {
+              console.error('Tasks subscription error:', err);
+              // Retry subscription after 5 seconds if it fails
+              retryTimeout = setTimeout(setupSubscriptions, 5000);
+            }
+          });
 
-      // Subscribe to real-time changes for completed_tasks table
-      completedTasksChannel = supabase
-        .channel('public:completed_tasks')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'completed_tasks'
-          },
-          (payload) => {
-            console.log('Completed tasks real-time update received:', payload);
-            // Force immediate refetch to ensure UI is in sync
-            fetchCompletedTasks();
-          }
-        )
-        .subscribe((status) => {
-          console.log('Completed tasks subscription status:', status);
-        });
+        // Subscribe to real-time changes for completed_tasks table
+        completedTasksChannel = supabase
+          .channel(`completed-tasks-${Date.now()}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'completed_tasks'
+            },
+            (payload) => {
+              console.log('Completed tasks real-time update received:', payload);
+              fetchCompletedTasks();
+            }
+          )
+          .subscribe((status, err) => {
+            console.log('Completed tasks subscription status:', status);
+            if (err) {
+              console.error('Completed tasks subscription error:', err);
+              // Retry subscription after 5 seconds if it fails
+              retryTimeout = setTimeout(setupSubscriptions, 5000);
+            }
+          });
+      } catch (error) {
+        console.error('Error setting up subscriptions:', error);
+        setLoading(false);
+      }
     };
 
     setupSubscriptions();
 
     return () => {
       console.log('Cleaning up real-time subscriptions');
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
       if (tasksChannel) {
         supabase.removeChannel(tasksChannel);
       }
@@ -201,12 +219,21 @@ export const TaskList: React.FC<TaskListProps> = ({
       const task = allTasks.find(t => t.id === taskId);
       if (!task) return;
 
+      // Optimistic update
+      setDbTasks(prev => prev.map(t => 
+        t.id === taskId ? { ...t, completed: !t.completed } : t
+      ));
+
       const { error } = await supabase
         .from('tasks')
         .update({ completed: !task.completed })
         .eq('id', taskId);
 
       if (error) {
+        // Revert optimistic update on error
+        setDbTasks(prev => prev.map(t => 
+          t.id === taskId ? { ...t, completed: task.completed } : t
+        ));
         throw error;
       }
 
@@ -227,6 +254,9 @@ export const TaskList: React.FC<TaskListProps> = ({
       const task = allTasks.find(t => t.id === taskId);
       if (!task) return;
 
+      // Optimistic update - remove from tasks
+      setDbTasks(prev => prev.filter(t => t.id !== taskId));
+
       // First, insert into completed_tasks table
       const { error: insertError } = await supabase
         .from('completed_tasks')
@@ -240,6 +270,8 @@ export const TaskList: React.FC<TaskListProps> = ({
         });
 
       if (insertError) {
+        // Revert optimistic update
+        setDbTasks(prev => [...prev, task]);
         throw insertError;
       }
 
@@ -250,6 +282,8 @@ export const TaskList: React.FC<TaskListProps> = ({
         .eq('id', taskId);
 
       if (deleteError) {
+        // Revert optimistic update and remove from completed tasks
+        setDbTasks(prev => [...prev, task]);
         throw deleteError;
       }
 
@@ -269,12 +303,27 @@ export const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
-  // Handle deleting a task
+  // Handle deleting a task with optimistic updates
   const handleDeleteTask = async (taskId: string) => {
     try {
       console.log('Deleting task:', taskId);
+      
+      // Add to deleting set for loading state
+      setDeletingTaskIds(prev => new Set([...prev, taskId]));
+      
+      // Optimistic update - immediately remove from UI
+      const taskToDelete = dbTasks.find(t => t.id === taskId);
+      setDbTasks(prev => prev.filter(t => t.id !== taskId));
+      
       const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+      
       if (error) {
+        // Revert optimistic update on error
+        if (taskToDelete) {
+          setDbTasks(prev => [...prev, taskToDelete].sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          ));
+        }
         throw error;
       }
       
@@ -291,68 +340,86 @@ export const TaskList: React.FC<TaskListProps> = ({
         description: "Failed to delete task. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      // Remove from deleting set
+      setDeletingTaskIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(taskId);
+        return newSet;
+      });
     }
   };
 
   // Task card component
-  const TaskCard = ({ task }: { task: Task }) => (
-    <Card className={`transition-all duration-500 border-0 shadow-lg hover:shadow-2xl bg-slate-800/40 backdrop-blur-xl border border-cyan-500/20 hover:border-cyan-400/40 group ${task.completed ? 'opacity-60' : ''}`}>
-      <CardContent className="p-5">
-        <div className="flex items-start space-x-4">
-          <div className="mt-1">
-            <Checkbox 
-              checked={task.completed} 
-              onCheckedChange={() => handleToggleTask(task.id)} 
-              className="data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500 border-cyan-500/50 text-white" 
-            />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className={`font-semibold text-lg leading-tight transition-all duration-300 ${task.completed ? 'line-through text-slate-400' : 'text-white group-hover:text-cyan-200'}`}>
-              {task.title}
-            </h3>
-            {task.description && (
-              <p className={`text-sm mt-2 leading-relaxed transition-all duration-300 ${task.completed ? 'text-slate-500' : 'text-slate-300 group-hover:text-slate-200'}`}>
-                {task.description}
-              </p>
-            )}
-            <div className="flex items-center justify-between mt-4">
-              <div className="flex items-center space-x-3">
-                <Badge variant="outline" className={`text-xs font-medium transition-all duration-300 ${getPriorityColor(task.priority)}`}>
-                  {task.priority}
-                </Badge>
-                {task.dueDate && (
-                  <div className="flex items-center text-xs text-slate-400 bg-slate-700/50 px-2 py-1 rounded-full border border-slate-600/30">
-                    <Calendar className="w-3 h-3 mr-1" />
-                    {new Date(task.dueDate).toLocaleDateString()}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleCompleteTask(task.id)}
-                  className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-2 h-auto transition-all duration-300 flex items-center gap-1"
-                  title="Mark as complete"
-                >
-                  <Check className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDeleteTask(task.id)}
-                  className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-2 h-auto transition-all duration-300"
-                  title="Delete task"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+  const TaskCard = ({ task }: { task: Task }) => {
+    const isDeleting = deletingTaskIds.has(task.id);
+    
+    return (
+      <Card className={`transition-all duration-500 border-0 shadow-lg hover:shadow-2xl bg-slate-800/40 backdrop-blur-xl border border-cyan-500/20 hover:border-cyan-400/40 group ${task.completed ? 'opacity-60' : ''} ${isDeleting ? 'opacity-30' : ''}`}>
+        <CardContent className="p-5">
+          <div className="flex items-start space-x-4">
+            <div className="mt-1">
+              <Checkbox 
+                checked={task.completed} 
+                onCheckedChange={() => handleToggleTask(task.id)} 
+                className="data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500 border-cyan-500/50 text-white"
+                disabled={isDeleting}
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className={`font-semibold text-lg leading-tight transition-all duration-300 ${task.completed ? 'line-through text-slate-400' : 'text-white group-hover:text-cyan-200'}`}>
+                {task.title}
+              </h3>
+              {task.description && (
+                <p className={`text-sm mt-2 leading-relaxed transition-all duration-300 ${task.completed ? 'text-slate-500' : 'text-slate-300 group-hover:text-slate-200'}`}>
+                  {task.description}
+                </p>
+              )}
+              <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center space-x-3">
+                  <Badge variant="outline" className={`text-xs font-medium transition-all duration-300 ${getPriorityColor(task.priority)}`}>
+                    {task.priority}
+                  </Badge>
+                  {task.dueDate && (
+                    <div className="flex items-center text-xs text-slate-400 bg-slate-700/50 px-2 py-1 rounded-full border border-slate-600/30">
+                      <Calendar className="w-3 h-3 mr-1" />
+                      {new Date(task.dueDate).toLocaleDateString()}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleCompleteTask(task.id)}
+                    className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-2 h-auto transition-all duration-300 flex items-center gap-1"
+                    title="Mark as complete"
+                    disabled={isDeleting}
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteTask(task.id)}
+                    className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 p-2 h-auto transition-all duration-300"
+                    title="Delete task"
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-400"></div>
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
   // Completed task card component
   const CompletedTaskCard = ({ task }: { task: CompletedTask }) => (
