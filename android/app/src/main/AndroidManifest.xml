@@ -1,6 +1,7 @@
 
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="app.lovable.fe0a188b17834f1393b8515bcfc08b91">
 
     <application
         android:allowBackup="true"
