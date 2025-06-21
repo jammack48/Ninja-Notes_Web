@@ -39,4 +39,9 @@ export interface ScheduledAction {
   status: 'pending' | 'completed' | 'failed';
   created_at: string;
   updated_at: string;
+  tasks?: {
+    id: string;
+    title: string;
+    description?: string;
+  };
 }

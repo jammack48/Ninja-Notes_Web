@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { VoiceCapture } from '@/components/VoiceCapture';
 import { TaskList } from '@/components/TaskList';
+import { ActionManager } from '@/components/ActionManager';
 import { LockScreen } from '@/components/LockScreen';
 import { Task } from '@/types/Task';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mic, List } from 'lucide-react';
+import { Mic, List, Calendar } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 const Index = () => {
   // Initialize lock screen to show first on published sites
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState<'mic' | 'tasks'>('mic');
+  const [currentScreen, setCurrentScreen] = useState<'mic' | 'tasks' | 'actions'>('mic');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeTaskCount, setActiveTaskCount] = useState(0);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
@@ -113,17 +114,29 @@ const Index = () => {
 
     console.log('Swipe detected:', { distanceX, distanceY, isLeftSwipe, isRightSwipe, isVerticalSwipe });
 
-    // Only handle horizontal swipes
+    // Only handle horizontal swipes - cycle through all three screens
     if (!isVerticalSwipe) {
       if (isLeftSwipe) {
-        // Swipe left: mic -> tasks, tasks -> mic (cycles)
         console.log('Swiping left');
-        setCurrentScreen(prev => prev === 'mic' ? 'tasks' : 'mic');
+        setCurrentScreen(prev => {
+          switch (prev) {
+            case 'mic': return 'tasks';
+            case 'tasks': return 'actions';
+            case 'actions': return 'mic';
+            default: return 'mic';
+          }
+        });
       }
       if (isRightSwipe) {
-        // Swipe right: tasks -> mic, mic -> tasks (cycles)
         console.log('Swiping right');
-        setCurrentScreen(prev => prev === 'tasks' ? 'mic' : 'tasks');
+        setCurrentScreen(prev => {
+          switch (prev) {
+            case 'mic': return 'actions';
+            case 'tasks': return 'mic';
+            case 'actions': return 'tasks';
+            default: return 'mic';
+          }
+        });
       }
     }
   };
@@ -147,38 +160,47 @@ const Index = () => {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan-900/20 via-transparent to-transparent"></div>
       <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.05%22%3E%3Ccircle%20cx%3D%2230%22%20cy%3D%2230%22%20r%3D%221%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')]"></div>
       
-      {/* Vertical tab indicators on the edges */}
+      {/* Vertical tab indicators on the edges - updated for 3 tabs */}
       <div className="absolute left-0 top-1/2 -translate-y-1/2 z-20 md:hidden">
         <div className="bg-slate-800/60 backdrop-blur-sm border border-cyan-500/30 rounded-r-lg px-2 py-8 flex flex-col items-center gap-2">
-          <div className={`w-1 h-8 rounded-full transition-all duration-300 ${currentScreen === 'tasks' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
-          <div className={`w-1 h-8 rounded-full transition-all duration-300 ${currentScreen === 'mic' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'actions' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'tasks' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'mic' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
         </div>
       </div>
       
       <div className="absolute right-0 top-1/2 -translate-y-1/2 z-20 md:hidden">
         <div className="bg-slate-800/60 backdrop-blur-sm border border-cyan-500/30 rounded-l-lg px-2 py-8 flex flex-col items-center gap-2">
-          <div className={`w-1 h-8 rounded-full transition-all duration-300 ${currentScreen === 'tasks' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
-          <div className={`w-1 h-8 rounded-full transition-all duration-300 ${currentScreen === 'mic' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'actions' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'tasks' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
+          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'mic' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
         </div>
       </div>
       
-      {/* Unified Tab Interface for both Mobile and Desktop */}
-      <Tabs value={currentScreen} onValueChange={(value) => setCurrentScreen(value as 'mic' | 'tasks')} className="h-screen">
+      {/* Updated Tab Interface for 3 tabs */}
+      <Tabs value={currentScreen} onValueChange={(value) => setCurrentScreen(value as 'mic' | 'tasks' | 'actions')} className="h-screen">
         <div className="bg-slate-800/50 backdrop-blur-xl border-b border-cyan-500/30 p-4 relative z-50">
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 bg-slate-800/70 border border-cyan-500/40 shadow-lg">
+          <TabsList className="grid w-full max-w-lg mx-auto grid-cols-3 bg-slate-800/70 border border-cyan-500/40 shadow-lg">
             <TabsTrigger 
               value="mic" 
-              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-2 font-medium transition-all duration-200"
+              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-1 font-medium transition-all duration-200 text-xs"
             >
-              <Mic className="w-4 h-4" />
-              Voice Input
+              <Mic className="w-3 h-3" />
+              Voice
             </TabsTrigger>
             <TabsTrigger 
               value="tasks" 
-              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-2 font-medium transition-all duration-200"
+              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-1 font-medium transition-all duration-200 text-xs"
             >
-              <List className="w-4 h-4" />
-              Messages ({activeTaskCount})
+              <List className="w-3 h-3" />
+              Tasks ({activeTaskCount})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="actions" 
+              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-1 font-medium transition-all duration-200 text-xs"
+            >
+              <Calendar className="w-3 h-3" />
+              Schedule
             </TabsTrigger>
           </TabsList>
           
@@ -204,6 +226,10 @@ const Index = () => {
             onDeleteTask={deleteTask}
             onSwitchToMic={() => setCurrentScreen('mic')}
           />
+        </TabsContent>
+        
+        <TabsContent value="actions" className="h-[calc(100vh-140px)] m-0 p-4">
+          <ActionManager />
         </TabsContent>
       </Tabs>
     </div>

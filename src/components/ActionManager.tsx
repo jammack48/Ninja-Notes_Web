@@ -1,16 +1,17 @@
-
 import React, { useEffect, useState } from 'react';
-import { Bell, Clock, Phone, Mail, MessageSquare, Calendar } from 'lucide-react';
+import { Bell, Clock, Phone, Mail, MessageSquare, Calendar, Smartphone } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { ScheduledAction } from '@/types/Task';
+import { nativeNotificationService } from '@/services/NativeNotificationService';
 
 export const ActionManager: React.FC = () => {
   const [scheduledActions, setScheduledActions] = useState<ScheduledAction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notificationsInitialized, setNotificationsInitialized] = useState(false);
   const { toast } = useToast();
 
   const fetchScheduledActions = async () => {
@@ -25,7 +26,7 @@ export const ActionManager: React.FC = () => {
             description
           )
         `)
-        .eq('status', 'pending')
+        .in('status', ['pending', 'completed'])
         .order('scheduled_for', { ascending: true });
 
       if (error) throw error;
@@ -62,7 +63,28 @@ export const ActionManager: React.FC = () => {
   };
 
   useEffect(() => {
+    const initializeNotifications = async () => {
+      const success = await nativeNotificationService.initialize();
+      setNotificationsInitialized(success);
+      
+      if (success) {
+        // Schedule all pending notifications
+        await nativeNotificationService.scheduleActionsFromDatabase();
+        toast({
+          title: "Notifications Ready",
+          description: "Native notifications have been scheduled for your actions.",
+        });
+      } else if (nativeNotificationService.isNativePlatform()) {
+        toast({
+          title: "Notification Permission Needed",
+          description: "Please enable notifications in your device settings.",
+          variant: "destructive"
+        });
+      }
+    };
+
     fetchScheduledActions();
+    initializeNotifications();
     setLoading(false);
 
     // Set up real-time subscription
@@ -123,33 +145,43 @@ export const ActionManager: React.FC = () => {
     return date.toLocaleDateString();
   };
 
-  const handleExecuteAction = async (action: ScheduledAction) => {
+  const handleDeleteAction = async (action: ScheduledAction) => {
     try {
-      // For now, we'll just mark it as completed
-      // In a real implementation, this would trigger the actual action
       const { error } = await supabase
         .from('scheduled_actions')
-        .update({ 
-          status: 'completed',
-          updated_at: new Date().toISOString()
-        })
+        .delete()
         .eq('id', action.id);
 
       if (error) throw error;
 
       toast({
-        title: "Action Executed",
-        description: `${action.action_type} action has been completed.`
+        title: "Action Deleted",
+        description: "The scheduled action has been removed."
       });
 
     } catch (error) {
-      console.error('Error executing action:', error);
+      console.error('Error deleting action:', error);
       toast({
         title: "Error",
-        description: "Failed to execute action.",
+        description: "Failed to delete action.",
         variant: "destructive"
       });
     }
+  };
+
+  const getStatusBadge = (action: ScheduledAction) => {
+    const now = new Date();
+    const scheduledTime = new Date(action.scheduled_for);
+    
+    if (action.status === 'completed') {
+      return <Badge variant="outline" className="bg-green-500/20 text-green-300 border-green-500/30">Completed</Badge>;
+    }
+    
+    if (scheduledTime < now && action.status === 'pending') {
+      return <Badge variant="outline" className="bg-red-500/20 text-red-300 border-red-500/30">Overdue</Badge>;
+    }
+    
+    return <Badge variant="outline" className="bg-blue-500/20 text-blue-300 border-blue-500/30">Scheduled</Badge>;
   };
 
   if (loading) {
@@ -160,27 +192,45 @@ export const ActionManager: React.FC = () => {
     );
   }
 
+  const pendingActions = scheduledActions.filter(action => action.status === 'pending');
+  const completedActions = scheduledActions.filter(action => action.status === 'completed');
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-4">
-        <Calendar className="w-5 h-5 text-cyan-400" />
-        <h2 className="text-lg font-semibold text-white">Scheduled Actions</h2>
-        <Badge variant="outline" className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30">
-          {scheduledActions.length}
-        </Badge>
+    <div className="space-y-4 max-h-full overflow-y-auto">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-5 h-5 text-cyan-400" />
+          <h2 className="text-lg font-semibold text-white">Scheduled Actions</h2>
+          <Badge variant="outline" className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30">
+            {scheduledActions.length}
+          </Badge>
+        </div>
+        
+        {nativeNotificationService.isNativePlatform() && (
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-cyan-400" />
+            <span className="text-xs text-cyan-300">
+              {notificationsInitialized ? 'Native notifications active' : 'Notifications disabled'}
+            </span>
+          </div>
+        )}
       </div>
 
-      {scheduledActions.length === 0 ? (
-        <Card className="bg-slate-800/40 backdrop-blur-xl border border-slate-500/20">
-          <CardContent className="p-6 text-center">
-            <Clock className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-            <p className="text-slate-300">No scheduled actions</p>
-            <p className="text-slate-500 text-sm mt-1">Actions will appear here when you schedule reminders</p>
+      {!nativeNotificationService.isNativePlatform() && (
+        <Card className="bg-amber-500/10 backdrop-blur-xl border border-amber-500/30">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-amber-300">
+              <Bell className="w-4 h-4" />
+              <span className="text-sm">Running in browser - notifications will appear as tasks when due</span>
+            </div>
           </CardContent>
         </Card>
-      ) : (
+      )}
+
+      {pendingActions.length > 0 && (
         <div className="space-y-3">
-          {scheduledActions.map((action: any) => (
+          <h3 className="text-md font-medium text-white">Pending Actions</h3>
+          {pendingActions.map((action: any) => (
             <Card key={action.id} className="bg-slate-800/40 backdrop-blur-xl border border-cyan-500/20 hover:border-cyan-400/40 transition-all duration-300">
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
@@ -210,22 +260,63 @@ export const ActionManager: React.FC = () => {
                         <span className="text-xs text-slate-400">
                           {formatScheduledTime(action.scheduled_for)}
                         </span>
+                        {getStatusBadge(action)}
                       </div>
                     </div>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleExecuteAction(action)}
-                    className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                    onClick={() => handleDeleteAction(action)}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                   >
-                    Execute
+                    Delete
                   </Button>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
+      )}
+
+      {completedActions.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-md font-medium text-white">Completed Actions</h3>
+          {completedActions.slice(0, 5).map((action: any) => (
+            <Card key={action.id} className="bg-slate-800/20 backdrop-blur-xl border border-slate-500/20 opacity-75">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-3">
+                  <div className="text-green-400">
+                    {getActionIcon(action.action_type)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium text-slate-300 truncate text-sm">
+                      {action.tasks?.title || 'Untitled Action'}
+                    </h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="outline" className="bg-green-500/20 text-green-300 border-green-500/30 text-xs">
+                        {action.action_type}
+                      </Badge>
+                      <span className="text-xs text-slate-500">
+                        Completed
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {scheduledActions.length === 0 && (
+        <Card className="bg-slate-800/40 backdrop-blur-xl border border-slate-500/20">
+          <CardContent className="p-6 text-center">
+            <Clock className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+            <p className="text-slate-300">No scheduled actions</p>
+            <p className="text-slate-500 text-sm mt-1">Actions will appear here when you schedule reminders</p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
