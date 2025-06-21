@@ -88,52 +88,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const requestMicrophonePermission = async (): Promise<boolean> => {
-    try {
-      // Check current permission status
-      const permission = await Permissions.query({ name: 'microphone' });
-      
-      if (permission.state === 'granted') {
-        return true;
-      }
-      
-      if (permission.state === 'denied') {
-        toast({
-          title: "Microphone Permission Denied",
-          description: "Please enable microphone access in your device settings to use voice recording.",
-          variant: "destructive"
-        });
-        return false;
-      }
-      
-      // Request permission if not yet determined
-      const result = await Permissions.request({ name: 'microphone' });
-      
-      if (result.state === 'granted') {
-        toast({
-          title: "Permission Granted",
-          description: "Microphone access enabled. You can now record voice commands.",
-        });
-        return true;
-      } else {
-        toast({
-          title: "Permission Required",
-          description: "Microphone access is required for voice recording. Please grant permission and try again.",
-          variant: "destructive"
-        });
-        return false;
-      }
-    } catch (error) {
-      console.error('Permission request error:', error);
-      toast({
-        title: "Permission Error",
-        description: "Failed to request microphone permission. Please check your device settings.",
-        variant: "destructive"
-      });
-      return false;
-    }
-  };
-
   const startRecording = async () => {
     try {
       console.log('Attempting to start recording...');
