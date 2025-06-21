@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Task } from '@/types/Task';
 import { useNotifications } from '@/hooks/useNotifications';
+import { Permissions } from '@capacitor/permissions';
 
 interface VoiceCaptureProps {
   onTaskCreated: (task: Task) => void;
@@ -88,8 +89,60 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const requestMicrophonePermission = async (): Promise<boolean> => {
+    try {
+      // Check current permission status
+      const permission = await Permissions.query({ name: 'microphone' });
+      
+      if (permission.state === 'granted') {
+        return true;
+      }
+      
+      if (permission.state === 'denied') {
+        toast({
+          title: "Microphone Permission Denied",
+          description: "Please enable microphone access in your device settings to use voice recording.",
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      // Request permission if not yet determined
+      const result = await Permissions.request({ name: 'microphone' });
+      
+      if (result.state === 'granted') {
+        toast({
+          title: "Permission Granted",
+          description: "Microphone access enabled. You can now record voice commands.",
+        });
+        return true;
+      } else {
+        toast({
+          title: "Permission Required",
+          description: "Microphone access is required for voice recording. Please grant permission and try again.",
+          variant: "destructive"
+        });
+        return false;
+      }
+    } catch (error) {
+      console.error('Permission request error:', error);
+      toast({
+        title: "Permission Error",
+        description: "Failed to request microphone permission. Please check your device settings.",
+        variant: "destructive"
+      });
+      return false;
+    }
+  };
+
   const startRecording = async () => {
     try {
+      // Request microphone permission first
+      const hasPermission = await requestMicrophonePermission();
+      if (!hasPermission) {
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -121,11 +174,27 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       setTranscriptionResult(null);
     } catch (error) {
       console.error('Error starting recording:', error);
-      toast({
-        title: "Recording Error",
-        description: "Could not start recording. Please check your microphone permissions.",
-        variant: "destructive"
-      });
+      
+      // Provide more specific error messages
+      if (error.name === 'NotAllowedError') {
+        toast({
+          title: "Microphone Access Denied",
+          description: "Please allow microphone access in your browser or device settings and try again.",
+          variant: "destructive"
+        });
+      } else if (error.name === 'NotFoundError') {
+        toast({
+          title: "No Microphone Found",
+          description: "No microphone device was found. Please check your device and try again.",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Recording Error",
+          description: "Could not start recording. Please check your microphone permissions and try again.",
+          variant: "destructive"
+        });
+      }
     }
   };
 
