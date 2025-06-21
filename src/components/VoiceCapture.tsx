@@ -7,7 +7,6 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Task } from '@/types/Task';
 import { useNotifications } from '@/hooks/useNotifications';
-import { Permissions } from '@capacitor/permissions';
 
 interface VoiceCaptureProps {
   onTaskCreated: (task: Task) => void;
@@ -137,13 +136,11 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
   const startRecording = async () => {
     try {
-      // Request microphone permission first
-      const hasPermission = await requestMicrophonePermission();
-      if (!hasPermission) {
-        return;
-      }
-
+      console.log('Attempting to start recording...');
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('Microphone access granted');
+      
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -172,26 +169,38 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       setIsRecording(true);
       setShowTranscript(false);
       setTranscriptionResult(null);
+      
+      toast({
+        title: "Recording Started",
+        description: "Microphone is active. Speak clearly for best results.",
+      });
+      
     } catch (error) {
       console.error('Error starting recording:', error);
       
-      // Provide more specific error messages
+      // Handle specific permission and device errors
       if (error.name === 'NotAllowedError') {
         toast({
-          title: "Microphone Access Denied",
-          description: "Please allow microphone access in your browser or device settings and try again.",
+          title: "Microphone Permission Denied",
+          description: "Please allow microphone access in your device settings and try again.",
           variant: "destructive"
         });
       } else if (error.name === 'NotFoundError') {
         toast({
           title: "No Microphone Found",
-          description: "No microphone device was found. Please check your device and try again.",
+          description: "No microphone device was detected. Please check your device.",
+          variant: "destructive"
+        });
+      } else if (error.name === 'NotSupportedError') {
+        toast({
+          title: "Feature Not Supported",
+          description: "Audio recording is not supported on this device.",
           variant: "destructive"
         });
       } else {
         toast({
           title: "Recording Error",
-          description: "Could not start recording. Please check your microphone permissions and try again.",
+          description: "Could not start recording. Please check your microphone and permissions.",
           variant: "destructive"
         });
       }
