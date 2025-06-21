@@ -48,10 +48,6 @@ class NativeNotificationService {
         // Set up notification listeners
         LocalNotifications.addListener('localNotificationReceived', (notification) => {
           console.log('Native notification received:', notification);
-          toast({
-            title: notification.title ?? 'Reminder',
-            description: notification.body,
-          });
         });
 
         LocalNotifications.addListener('localNotificationActionPerformed', async (notificationAction) => {

@@ -407,18 +407,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const testPopupNotification = async () => {
     console.log('🧪 Testing popup notification...');
     const success = await nativeNotificationService.scheduleTestNotification();
-    
-    if (success) {
-      toast({
-        title: "Test Scheduled",
-        description: "Popup notification will appear in 10 seconds!",
-      });
-    } else {
-      toast({
-        title: "Test Failed",
-        description: "Could not schedule test notification",
-        variant: "destructive"
-      });
+
+    if (!success) {
+      console.error('Could not schedule test notification');
     }
   };
 
@@ -439,19 +430,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         </div>
       )}
 
-      {/* Test Notification Button - Fixed position */}
-      <div className="fixed top-20 left-4 z-40">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={testPopupNotification}
-          disabled={isProcessing}
-          className="bg-orange-500/20 border-orange-400/40 text-orange-100 hover:bg-orange-500/30 backdrop-blur-sm"
-        >
-          <Bell className="w-4 h-4 mr-2" />
-          Test Popup
-        </Button>
-      </div>
+
 
       {/* Main Recording Interface */}
       <div className="text-center space-y-4">
@@ -492,8 +471,18 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             }
           </p>
           <p className="text-orange-300 text-sm">
-            Use "Test Popup" button to verify notifications work
+            Tap below to test notifications
           </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={testPopupNotification}
+            disabled={isProcessing}
+            className="bg-orange-500/20 border-orange-400/40 text-orange-100 hover:bg-orange-500/30 backdrop-blur-sm mt-2"
+          >
+            <Bell className="w-4 h-4 mr-2" />
+            Test Popup
+          </Button>
         </div>
 
         {isProcessing && (

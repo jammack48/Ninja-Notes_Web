@@ -70,10 +70,6 @@ export const ActionManager: React.FC = () => {
       if (success) {
         // Schedule all pending notifications
         await nativeNotificationService.scheduleActionsFromDatabase();
-        toast({
-          title: "Notifications Ready",
-          description: "Native notifications have been scheduled for your actions.",
-        });
       } else if (nativeNotificationService.isNativePlatform()) {
         toast({
           title: "Notification Permission Needed",
