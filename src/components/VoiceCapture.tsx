@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Task } from '@/types/Task';
-import { useNotifications } from '@/hooks/useNotifications';
+import { nativeNotificationService } from '@/services/NativeNotificationService';
 
 interface VoiceCaptureProps {
   onTaskCreated: (task: Task) => void;
@@ -66,7 +66,6 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
-  const { scheduleNotification, isNativePlatform } = useNotifications();
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -253,30 +252,29 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
       console.log('Task created successfully:', task);
 
-      // For reminders, handle both native notifications and database scheduling
-      if (taskData.actionType === 'reminder' && taskData.scheduledFor && task) {
+      // For scheduled tasks, create both native notifications and database scheduling
+      if (taskData.scheduledFor && task) {
         const scheduledDate = new Date(taskData.scheduledFor);
         
-        // Try to schedule native notification first (for mobile)
-        if (isNativePlatform) {
-          const notificationScheduled = await scheduleNotification({
-            id: parseInt(task.id.replace(/-/g, '').substring(0, 8), 16), // Convert UUID to number
-            title: `⏰ ${taskData.title}`,
-            body: taskData.description || 'Reminder notification',
+        // Schedule native notification for immediate device notification
+        if (nativeNotificationService.isNativePlatform()) {
+          const notificationId = nativeNotificationService.getNextNotificationId();
+          
+          const notificationScheduled = await nativeNotificationService.scheduleNotification({
+            id: notificationId,
+            title: `${taskData.actionType === 'reminder' ? '⏰' : '📱'} ${taskData.title}`,
+            body: taskData.description || `${taskData.actionType} notification`,
             scheduledAt: scheduledDate,
-            data: { taskId: task.id, actionType: 'reminder' }
+            actionId: task.id
           });
 
           if (notificationScheduled) {
-            toast({
-              title: "Native Reminder Set",
-              description: `You'll get a phone notification at ${scheduledDate.toLocaleString()}`,
-            });
+            console.log('Native notification scheduled for:', scheduledDate);
           }
         }
 
-        // Also create scheduled action in database as backup/fallback
-        console.log('Creating scheduled action for reminder with task_id:', task.id);
+        // Also create scheduled action in database as backup
+        console.log('Creating scheduled action with task_id:', task.id);
         
         await new Promise(resolve => setTimeout(resolve, 100));
         
@@ -288,7 +286,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             scheduled_for: taskData.scheduledFor,
             contact_info: taskData.contactInfo || null,
             notification_settings: {
-              web_push: !isNativePlatform, // Only use web push if not native
+              web_push: !nativeNotificationService.isNativePlatform(),
               email: false,
               sms: false
             },
@@ -299,21 +297,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
         if (scheduledError) {
           console.error('Error creating scheduled action:', scheduledError);
-          if (!isNativePlatform) {
-            toast({
-              title: "Warning",
-              description: "Task created but web reminder scheduling failed.",
-              variant: "destructive"
-            });
-          }
         } else {
           console.log('Scheduled action created successfully:', scheduledAction);
-          if (!isNativePlatform) {
-            toast({
-              title: "Web Reminder Scheduled",
-              description: `Reminder set for ${scheduledDate.toLocaleString()}`,
-            });
-          }
         }
       }
 
@@ -331,10 +316,8 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         contactInfo: convertToContactInfo(task.contact_info),
       };
 
-      // Only call onTaskCreated for non-reminder tasks or immediate tasks
-      if (taskData.actionType !== 'reminder' || !taskData.scheduledFor) {
-        onTaskCreated(newTask);
-      }
+      // Only call onTaskCreated for non-scheduled tasks or to update the UI
+      onTaskCreated(newTask);
 
       return newTask;
     } catch (error) {
