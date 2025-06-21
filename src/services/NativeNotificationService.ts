@@ -57,6 +57,77 @@ class NativeNotificationService {
     }
   }
 
+  private formatRelativeTime(scheduledAt: Date): string {
+    const now = new Date();
+    const diffMs = scheduledAt.getTime() - now.getTime();
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMinutes < 1) return 'now';
+    if (diffMinutes < 60) return `in ${diffMinutes} minute${diffMinutes === 1 ? '' : 's'}`;
+    if (diffHours < 24) return `in ${diffHours} hour${diffHours === 1 ? '' : 's'}`;
+    if (diffDays < 7) return `in ${diffDays} day${diffDays === 1 ? '' : 's'}`;
+    
+    return scheduledAt.toLocaleDateString();
+  }
+
+  private createNotificationContent(action: any): { title: string; body: string } {
+    const taskTitle = action.tasks?.title || 'Task';
+    const actionType = action.action_type;
+    const scheduledTime = new Date(action.scheduled_for);
+    const relativeTime = this.formatRelativeTime(scheduledTime);
+    const absoluteTime = scheduledTime.toLocaleString();
+    
+    let title = '';
+    let body = '';
+
+    // Create context-aware title
+    switch (actionType) {
+      case 'call':
+        const contactName = action.contact_info?.name || 'contact';
+        title = `Call ${contactName} ${relativeTime}`;
+        break;
+      case 'text':
+        const textContact = action.contact_info?.name || 'contact';
+        title = `Text ${textContact} ${relativeTime}`;
+        break;
+      case 'email':
+        const emailContact = action.contact_info?.name || 'contact';
+        title = `Email ${emailContact} ${relativeTime}`;
+        break;
+      case 'reminder':
+        title = `Reminder: ${taskTitle} ${relativeTime}`;
+        break;
+      default:
+        title = `${taskTitle} ${relativeTime}`;
+    }
+
+    // Create detailed body
+    let bodyParts = [];
+    
+    if (action.tasks?.description) {
+      bodyParts.push(action.tasks.description);
+    }
+    
+    bodyParts.push(`Scheduled for ${absoluteTime}`);
+    
+    if (action.contact_info?.name) {
+      let contactInfo = `Contact: ${action.contact_info.name}`;
+      if (action.contact_info.phone) {
+        contactInfo += ` (${action.contact_info.phone})`;
+      }
+      if (action.contact_info.email) {
+        contactInfo += ` - ${action.contact_info.email}`;
+      }
+      bodyParts.push(contactInfo);
+    }
+    
+    body = bodyParts.join('\n');
+
+    return { title, body };
+  }
+
   async scheduleNotification(schedule: NotificationSchedule): Promise<boolean> {
     if (!this.isNative) {
       console.log('Browser environment - cannot schedule native notifications');
@@ -152,11 +223,12 @@ class NativeNotificationService {
 
       for (const action of pendingActions || []) {
         const notificationId = this.notificationCounter++;
+        const { title, body } = this.createNotificationContent(action);
         
         await this.scheduleNotification({
           id: notificationId,
-          title: `${action.action_type.toUpperCase()}: ${action.tasks?.title || 'Task'}`,
-          body: action.tasks?.description || `Scheduled ${action.action_type}`,
+          title,
+          body,
           scheduledAt: new Date(action.scheduled_for),
           actionId: action.id,
         });
