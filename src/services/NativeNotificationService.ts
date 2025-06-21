@@ -1,4 +1,3 @@
-
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
@@ -135,7 +134,14 @@ class NativeNotificationService {
     }
 
     try {
-      await LocalNotifications.schedule({
+      console.log('📱 Attempting to schedule notification:', {
+        id: schedule.id,
+        title: schedule.title,
+        scheduledAt: schedule.scheduledAt,
+        timeUntil: Math.round((schedule.scheduledAt.getTime() - Date.now()) / 1000) + ' seconds'
+      });
+
+      const result = await LocalNotifications.schedule({
         notifications: [
           {
             id: schedule.id,
@@ -148,14 +154,21 @@ class NativeNotificationService {
             attachments: [],
             actionTypeId: 'OPEN_APP',
             extra: { actionId: schedule.actionId },
+            smallIcon: 'ic_stat_icon_config_sample',
+            iconColor: '#488AFF',
           },
         ],
       });
 
-      console.log('Native notification scheduled:', schedule);
+      console.log('✅ Native notification scheduled successfully:', result);
+      
+      // Verify the notification was scheduled
+      const pending = await LocalNotifications.getPending();
+      console.log('📋 Pending notifications after scheduling:', pending.notifications.length);
+      
       return true;
     } catch (error) {
-      console.error('Error scheduling native notification:', error);
+      console.error('❌ Error scheduling native notification:', error);
       return false;
     }
   }

@@ -252,61 +252,64 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
       console.log('✅ Task created successfully:', task);
 
-      // For scheduled tasks, create both native notifications and database scheduling
+      // For scheduled tasks, create native notifications
       if (taskData.scheduledFor && task) {
         const scheduledDate = new Date(taskData.scheduledFor);
-        console.log(`📅 Scheduling notifications for: ${scheduledDate.toISOString()}`);
+        const now = new Date();
         
-        // Schedule native notification for immediate device notification
-        if (nativeNotificationService.isNativePlatform()) {
-          const notificationId = nativeNotificationService.getNextNotificationId();
-          
-          console.log(`📱 Scheduling native notification with ID: ${notificationId}`);
-          const notificationScheduled = await nativeNotificationService.scheduleNotification({
-            id: notificationId,
-            title: `${taskData.actionType === 'reminder' ? '⏰' : '📱'} ${taskData.title}`,
-            body: taskData.description || `${taskData.actionType} notification`,
-            scheduledAt: scheduledDate,
-            actionId: task.id
-          });
-
-          if (notificationScheduled) {
-            console.log('✅ Native notification scheduled successfully for:', scheduledDate);
-            toast({
-              title: "Notification Scheduled",
-              description: `Reminder set for ${scheduledDate.toLocaleString()}`,
+        console.log(`📅 Scheduling notification for: ${scheduledDate.toISOString()}`);
+        console.log(`⏰ Current time: ${now.toISOString()}`);
+        console.log(`⌛ Time until notification: ${Math.round((scheduledDate.getTime() - now.getTime()) / 1000)} seconds`);
+        
+        // Only schedule if the time is in the future
+        if (scheduledDate > now) {
+          // Schedule native notification for immediate device notification
+          if (nativeNotificationService.isNativePlatform()) {
+            const notificationId = nativeNotificationService.getNextNotificationId();
+            
+            console.log(`📱 Scheduling native notification with ID: ${notificationId}`);
+            const notificationScheduled = await nativeNotificationService.scheduleNotification({
+              id: notificationId,
+              title: `${taskData.actionType === 'reminder' ? '⏰ Reminder' : '📱 Action'}: ${taskData.title}`,
+              body: taskData.description || `Time for your ${taskData.actionType}!`,
+              scheduledAt: scheduledDate,
+              actionId: task.id
             });
-          } else {
-            console.error('❌ Failed to schedule native notification');
+
+            if (notificationScheduled) {
+              console.log('✅ Native notification scheduled successfully for:', scheduledDate);
+            } else {
+              console.error('❌ Failed to schedule native notification');
+            }
           }
-        }
 
-        // Also create scheduled action in database as backup
-        console.log('📝 Creating scheduled action with task_id:', task.id);
-        
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const { data: scheduledAction, error: scheduledError } = await supabase
-          .from('scheduled_actions')
-          .insert([{
-            task_id: task.id,
-            action_type: taskData.actionType,
-            scheduled_for: taskData.scheduledFor,
-            contact_info: taskData.contactInfo || null,
-            notification_settings: {
-              web_push: !nativeNotificationService.isNativePlatform(),
-              email: false,
-              sms: false
-            },
-            status: 'pending'
-          }])
-          .select()
-          .single();
+          // Also create scheduled action in database as backup
+          console.log('📝 Creating scheduled action with task_id:', task.id);
+          
+          const { data: scheduledAction, error: scheduledError } = await supabase
+            .from('scheduled_actions')
+            .insert([{
+              task_id: task.id,
+              action_type: taskData.actionType,
+              scheduled_for: taskData.scheduledFor,
+              contact_info: taskData.contactInfo || null,
+              notification_settings: {
+                web_push: !nativeNotificationService.isNativePlatform(),
+                email: false,
+                sms: false
+              },
+              status: 'pending'
+            }])
+            .select()
+            .single();
 
-        if (scheduledError) {
-          console.error('❌ Error creating scheduled action:', scheduledError);
+          if (scheduledError) {
+            console.error('❌ Error creating scheduled action:', scheduledError);
+          } else {
+            console.log('✅ Scheduled action created successfully:', scheduledAction);
+          }
         } else {
-          console.log('✅ Scheduled action created successfully:', scheduledAction);
+          console.log('⚠️ Scheduled time is in the past, not scheduling notification');
         }
       } else if (!taskData.scheduledFor) {
         console.log('ℹ️ No scheduledFor date - notification not scheduled');
