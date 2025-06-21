@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Volume2, Copy, RotateCcw, CheckCircle, Send, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, Volume2, Copy, RotateCcw, CheckCircle, Send, AlertTriangle, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -403,6 +403,25 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     });
   };
 
+  // Add test notification function
+  const testPopupNotification = async () => {
+    console.log('🧪 Testing popup notification...');
+    const success = await nativeNotificationService.scheduleTestNotification();
+    
+    if (success) {
+      toast({
+        title: "Test Scheduled",
+        description: "Popup notification will appear in 10 seconds!",
+      });
+    } else {
+      toast({
+        title: "Test Failed",
+        description: "Could not schedule test notification",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-full p-4 space-y-6">
       {/* Floating Task Count */}
@@ -419,6 +438,20 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           </Button>
         </div>
       )}
+
+      {/* Test Notification Button - Fixed position */}
+      <div className="fixed top-20 left-4 z-40">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={testPopupNotification}
+          disabled={isProcessing}
+          className="bg-orange-500/20 border-orange-400/40 text-orange-100 hover:bg-orange-500/30 backdrop-blur-sm"
+        >
+          <Bell className="w-4 h-4 mr-2" />
+          Test Popup
+        </Button>
+      </div>
 
       {/* Main Recording Interface */}
       <div className="text-center space-y-4">
@@ -457,6 +490,9 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
               ? 'Speak your task or reminder clearly' 
               : 'Press and hold to capture your voice command'
             }
+          </p>
+          <p className="text-orange-300 text-sm">
+            Use "Test Popup" button to verify notifications work
           </p>
         </div>
 

@@ -134,7 +134,7 @@ class NativeNotificationService {
     }
 
     try {
-      console.log('📱 Attempting to schedule notification:', {
+      console.log('📱 Attempting to schedule HIGH PRIORITY notification:', {
         id: schedule.id,
         title: schedule.title,
         scheduledAt: schedule.scheduledAt,
@@ -156,11 +156,19 @@ class NativeNotificationService {
             extra: { actionId: schedule.actionId },
             smallIcon: 'ic_stat_icon_config_sample',
             iconColor: '#488AFF',
+            // Configure for heads-up notification (popup)
+            ongoing: true,
+            autoCancel: false,
+            // High priority to ensure it appears as heads-up
+            priority: 5, // MAX priority
+            visibility: 1, // PUBLIC visibility
+            // Additional Android-specific settings for popup behavior
+            channelId: 'urgent-reminders',
           },
         ],
       });
 
-      console.log('✅ Native notification scheduled successfully:', result);
+      console.log('✅ HIGH PRIORITY notification scheduled successfully:', result);
       
       // Verify the notification was scheduled
       const pending = await LocalNotifications.getPending();
@@ -168,9 +176,22 @@ class NativeNotificationService {
       
       return true;
     } catch (error) {
-      console.error('❌ Error scheduling native notification:', error);
+      console.error('❌ Error scheduling high priority notification:', error);
       return false;
     }
+  }
+
+  async scheduleTestNotification(): Promise<boolean> {
+    const testSchedule: NotificationSchedule = {
+      id: 9999,
+      title: "🚨 TEST POPUP NOTIFICATION",
+      body: "This is a test to verify popup notifications are working!",
+      scheduledAt: new Date(Date.now() + 10000), // 10 seconds from now
+      actionId: "test-notification"
+    };
+
+    console.log('🧪 Scheduling test popup notification in 10 seconds...');
+    return await this.scheduleNotification(testSchedule);
   }
 
   async cancelNotification(id: number): Promise<boolean> {
