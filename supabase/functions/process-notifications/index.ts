@@ -24,7 +24,7 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get all pending actions that are due
+    // Get all pending actions that are due (only web_push enabled ones, since native are handled on device)
     const { data: dueActions, error: fetchError } = await supabase
       .from('scheduled_actions')
       .select(`
@@ -39,26 +39,27 @@ serve(async (req) => {
         )
       `)
       .eq('status', 'pending')
-      .lte('scheduled_for', new Date().toISOString());
+      .lte('scheduled_for', new Date().toISOString())
+      .eq('notification_settings->web_push', true); // Only process web notifications
 
     if (fetchError) {
       throw fetchError;
     }
 
-    console.log(`📋 Found ${dueActions?.length || 0} due actions`);
+    console.log(`📋 Found ${dueActions?.length || 0} due web notification actions`);
 
     const processedActions = [];
 
     for (const action of dueActions || []) {
-      console.log(`⚡ Processing action: ${action.action_type} for task: ${action.tasks?.title}`);
+      console.log(`⚡ Processing web notification for: ${action.tasks?.title}`);
       
       try {
         let notificationSent = false;
         const notifications = [];
 
-        // For reminders, create a visible task in the main task list
+        // For reminders, create a visible task in the main task list (web fallback)
         if (action.action_type === 'reminder') {
-          console.log('📝 Creating visible reminder task');
+          console.log('📝 Creating visible reminder task for web users');
           
           // Create a new task that will appear in the task list
           const { error: taskError } = await supabase
@@ -75,32 +76,16 @@ serve(async (req) => {
           if (taskError) {
             console.error('❌ Failed to create reminder task:', taskError);
           } else {
-            console.log('✅ Reminder task created successfully');
+            console.log('✅ Web reminder task created successfully');
             notificationSent = true;
             notifications.push('task_created');
           }
         }
 
-        // Web Push Notification (placeholder - would need actual implementation)
-        if (action.notification_settings?.web_push) {
-          console.log(`📱 Would send web push: "${action.tasks?.title}"`);
-          notifications.push('web_push');
-          notificationSent = true;
-        }
-
-        // Email Notification (placeholder - would integrate with Resend)
-        if (action.notification_settings?.email) {
-          console.log(`📧 Would send email: "${action.tasks?.title}"`);
-          notifications.push('email');
-          notificationSent = true;
-        }
-
-        // SMS Notification (placeholder - would integrate with Twilio)
-        if (action.notification_settings?.sms) {
-          console.log(`📲 Would send SMS: "${action.tasks?.title}"`);
-          notifications.push('sms');
-          notificationSent = true;
-        }
+        // Placeholder for future web push implementation
+        console.log(`📱 Web notification processed for: "${action.tasks?.title}"`);
+        notifications.push('web_notification');
+        notificationSent = true;
 
         // Update action status
         const { error: updateError } = await supabase
@@ -137,12 +122,13 @@ serve(async (req) => {
       }
     }
 
-    console.log(`✅ Processed ${processedActions.length} actions`);
+    console.log(`✅ Processed ${processedActions.length} web notification actions`);
 
     return new Response(JSON.stringify({
       success: true,
       processed_count: processedActions.length,
-      actions: processedActions
+      actions: processedActions,
+      note: 'Native notifications are handled on-device'
     }), {
       headers: {
         ...corsHeaders,
