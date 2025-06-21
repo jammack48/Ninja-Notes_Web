@@ -56,24 +56,35 @@ function processBase64Chunks(base64String, chunkSize = 32768) {
 function parseTimeExpression(timeText, baseTime = new Date()) {
   const text = timeText.toLowerCase();
   const now = new Date(baseTime);
+  console.log(`🕐 Parsing time expression: "${text}" from base time: ${now.toISOString()}`);
   
-  // Handle relative time expressions
+  // Handle relative time expressions with "in"
   if (text.includes('in ')) {
-    const minutesMatch = text.match(/in (\d+) minutes?/);
-    const hoursMatch = text.match(/in (\d+) hours?/);
-    const daysMatch = text.match(/in (\d+) days?/);
-    
+    // Match "in X minutes" or "in X mins"
+    const minutesMatch = text.match(/in (\d+) (?:minutes?|mins?)/);
     if (minutesMatch) {
       const minutes = parseInt(minutesMatch[1]);
-      return new Date(now.getTime() + minutes * 60 * 1000);
+      const futureTime = new Date(now.getTime() + minutes * 60 * 1000);
+      console.log(`✅ Parsed "in ${minutes} minutes" to: ${futureTime.toISOString()}`);
+      return futureTime;
     }
+    
+    // Match "in X hours" or "in X hrs"
+    const hoursMatch = text.match(/in (\d+) (?:hours?|hrs?)/);
     if (hoursMatch) {
       const hours = parseInt(hoursMatch[1]);
-      return new Date(now.getTime() + hours * 60 * 60 * 1000);
+      const futureTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
+      console.log(`✅ Parsed "in ${hours} hours" to: ${futureTime.toISOString()}`);
+      return futureTime;
     }
+    
+    // Match "in X days"
+    const daysMatch = text.match(/in (\d+) days?/);
     if (daysMatch) {
       const days = parseInt(daysMatch[1]);
-      return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      const futureTime = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      console.log(`✅ Parsed "in ${days} days" to: ${futureTime.toISOString()}`);
+      return futureTime;
     }
   }
   
@@ -95,6 +106,7 @@ function parseTimeExpression(timeText, baseTime = new Date()) {
     } else {
       tomorrow.setHours(9, 0, 0, 0); // Default to 9 AM
     }
+    console.log(`✅ Parsed "tomorrow" to: ${tomorrow.toISOString()}`);
     return tomorrow;
   }
   
@@ -103,9 +115,11 @@ function parseTimeExpression(timeText, baseTime = new Date()) {
     const nextWeek = new Date(now);
     nextWeek.setDate(nextWeek.getDate() + 7);
     nextWeek.setHours(9, 0, 0, 0);
+    console.log(`✅ Parsed "next week" to: ${nextWeek.toISOString()}`);
     return nextWeek;
   }
   
+  console.log(`❌ Could not parse time expression: "${text}"`);
   return null;
 }
 
@@ -196,7 +210,9 @@ Response format (JSON):
 EXAMPLES:
 - "remind me in ten minutes to call nigel" -> actionType: "reminder", scheduledFor: now+10min, contactInfo: {name: "nigel"}
 - "call mom tomorrow at 3pm" -> actionType: "call", scheduledFor: tomorrow 3pm, contactInfo: {name: "mom"}
-- "text john about the meeting" -> actionType: "text", contactInfo: {name: "john"}`;
+- "text john about the meeting" -> actionType: "text", contactInfo: {name: "john"}
+
+IMPORTANT: Do NOT set scheduledFor in your response. Leave it null. The system will handle time parsing separately.`;
 
     const chatgptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -230,21 +246,17 @@ EXAMPLES:
       try {
         const parsedResult = JSON.parse(chatgptResult.choices[0].message.content);
         
-        // Process time expressions for each task
+        // Process time expressions for each task using our improved parser
         if (parsedResult.extractedTasks && parsedResult.extractedTasks.length > 0) {
           parsedResult.extractedTasks = parsedResult.extractedTasks.map(task => {
-            if (task.scheduledFor && typeof task.scheduledFor === 'string') {
-              // If ChatGPT provided a time, try to parse it properly
-              const parsedTime = parseTimeExpression(rawTranscription);
-              if (parsedTime) {
-                task.scheduledFor = parsedTime.toISOString();
-              }
-            } else if (!task.scheduledFor) {
-              // Try to extract time from the original text
-              const parsedTime = parseTimeExpression(rawTranscription);
-              if (parsedTime) {
-                task.scheduledFor = parsedTime.toISOString();
-              }
+            // Try to extract time from the original transcription
+            const parsedTime = parseTimeExpression(rawTranscription);
+            if (parsedTime) {
+              task.scheduledFor = parsedTime.toISOString();
+              console.log(`✅ Set task scheduledFor to: ${task.scheduledFor}`);
+            } else {
+              task.scheduledFor = null;
+              console.log(`ℹ️ No time expression found for task: ${task.title}`);
             }
             return task;
           });

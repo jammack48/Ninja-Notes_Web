@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Volume2, Copy, RotateCcw, Wrench, CheckCircle, Send } from 'lucide-react';
+import { Mic, MicOff, Volume2, Copy, RotateCcw, CheckCircle, Send, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -190,13 +190,22 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
       setTranscriptionResult(data);
       setShowTranscript(true);
       
-      // Auto-save tasks that have high confidence
+      // Only auto-save tasks that have high confidence AND clear actionable tasks
       if (data.confidence === 'high' && data.extractedTasks?.length > 0) {
-        await saveAllTasks(data.extractedTasks);
-        toast({
-          title: "Tasks Saved",
-          description: `${data.extractedTasks.length} task(s) processed and saved successfully!`,
-        });
+        // Check if any task has scheduling or clear action type
+        const hasActionableTasks = data.extractedTasks.some(task => 
+          task.scheduledFor || ['call', 'text', 'email', 'reminder'].includes(task.actionType)
+        );
+        
+        if (hasActionableTasks) {
+          await saveAllTasks(data.extractedTasks);
+          toast({
+            title: "Tasks Auto-Saved",
+            description: `${data.extractedTasks.length} task(s) processed and saved automatically!`,
+          });
+          setShowTranscript(false);
+          setTranscriptionResult(null);
+        }
       }
       
     } catch (error) {
@@ -379,11 +388,11 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
     startRecording();
   };
 
-  const handleForceAccept = async () => {
+  const handleAcceptTasks = async () => {
     if (transcriptionResult?.extractedTasks?.length > 0) {
       await saveAllTasks(transcriptionResult.extractedTasks);
       toast({
-        title: "Tasks Saved",
+        title: "Tasks Accepted",
         description: `${transcriptionResult.extractedTasks.length} task(s) saved successfully!`,
       });
       setShowTranscript(false);
@@ -470,7 +479,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
             <CardContent className="p-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-white">Transcript Result</h3>
+                  <h3 className="text-lg font-semibold text-white">Voice Command Result</h3>
                   <Badge 
                     variant="outline" 
                     className={`${
@@ -487,15 +496,15 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
                 <div className="space-y-3">
                   <div>
-                    <p className="text-sm text-slate-400 mb-1">Processed Text:</p>
+                    <p className="text-sm text-slate-400 mb-1">What you said:</p>
                     <p className="text-white bg-slate-700/50 p-3 rounded-lg">
-                      {transcriptionResult.cleanedText}
+                      "{transcriptionResult.cleanedText}"
                     </p>
                   </div>
 
                   {transcriptionResult.extractedTasks?.length > 0 && (
                     <div>
-                      <p className="text-sm text-slate-400 mb-2">Extracted Tasks:</p>
+                      <p className="text-sm text-slate-400 mb-2">Detected Tasks:</p>
                       <div className="space-y-2">
                         {transcriptionResult.extractedTasks.map((task, index) => (
                           <div key={index} className="bg-slate-700/50 p-3 rounded-lg">
@@ -511,12 +520,12 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                             <p className="text-slate-300 text-sm">{task.description}</p>
                             {task.scheduledFor && (
                               <p className="text-cyan-400 text-xs mt-1">
-                                Scheduled: {new Date(task.scheduledFor).toLocaleString()}
+                                ⏰ Scheduled: {new Date(task.scheduledFor).toLocaleString()}
                               </p>
                             )}
                             {task.contactInfo?.name && (
                               <p className="text-purple-400 text-xs">
-                                Contact: {task.contactInfo.name}
+                                👤 Contact: {task.contactInfo.name}
                               </p>
                             )}
                           </div>
@@ -524,63 +533,71 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
                       </div>
                     </div>
                   )}
+
+                  {transcriptionResult.potentialErrors?.length > 0 && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg">
+                      <div className="flex items-center gap-2 mb-1">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <p className="text-sm text-amber-400">Potential Issues:</p>
+                      </div>
+                      <ul className="text-xs text-amber-300 list-disc list-inside">
+                        {transcriptionResult.potentialErrors.map((error, index) => (
+                          <li key={index}>{error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
-                {/* Action Buttons - 2x2 Grid for Mobile */}
-                <div className="grid grid-cols-2 gap-3 mt-6">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRetry}
-                    className="bg-slate-700/50 border-slate-600 text-slate-300 hover:bg-slate-600/50 text-xs py-2"
-                  >
-                    <RotateCcw className="w-3 h-3 mr-1" />
-                    Try Again
-                  </Button>
+                {/* Action Buttons - Improved Layout */}
+                <div className="space-y-3 mt-6">
+                  {/* Primary Action - Accept/Save Tasks */}
+                  {transcriptionResult.extractedTasks?.length > 0 && (
+                    <Button
+                      onClick={handleAcceptTasks}
+                      className="w-full bg-green-500 hover:bg-green-600 text-white font-medium"
+                    >
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Accept & Save {transcriptionResult.extractedTasks.length} Task{transcriptionResult.extractedTasks.length > 1 ? 's' : ''}
+                    </Button>
+                  )}
                   
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleForceAccept}
-                    className="bg-green-500/20 border-green-500/40 text-green-300 hover:bg-green-500/30 text-xs py-2"
-                  >
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    Force Fix
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCustomEdit}
-                    className="bg-blue-500/20 border-blue-500/40 text-blue-300 hover:bg-blue-500/30 text-xs py-2"
-                  >
-                    <Wrench className="w-3 h-3 mr-1" />
-                    Custom Edit
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={copyToClipboard}
-                    className="bg-purple-500/20 border-purple-500/40 text-purple-300 hover:bg-purple-500/30 text-xs py-2"
-                  >
-                    <Copy className="w-3 h-3 mr-1" />
-                    Copy Text
-                  </Button>
-                </div>
+                  {/* Secondary Actions - Grid Layout */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRetry}
+                      className="bg-slate-700/50 border-slate-600 text-slate-300 hover:bg-slate-600/50"
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Try Again
+                    </Button>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyToClipboard}
+                      className="bg-purple-500/20 border-purple-500/40 text-purple-300 hover:bg-purple-500/30"
+                    >
+                      <Copy className="w-3 h-3 mr-1" />
+                      Copy Text
+                    </Button>
+                  </div>
 
-                {/* Audio Controls */}
-                <div className="flex items-center justify-center space-x-4 pt-4 border-t border-slate-600">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={playAudio}
-                    disabled={isPlaying}
-                    className="text-slate-300 hover:text-white"
-                  >
-                    <Volume2 className="w-4 h-4 mr-2" />
-                    {isPlaying ? 'Playing...' : 'Play Audio'}
-                  </Button>
+                  {/* Audio Controls */}
+                  <div className="flex items-center justify-center pt-2 border-t border-slate-600">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={playAudio}
+                      disabled={isPlaying}
+                      className="text-slate-300 hover:text-white"
+                    >
+                      <Volume2 className="w-4 h-4 mr-2" />
+                      {isPlaying ? 'Playing...' : 'Replay Audio'}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
