@@ -156,14 +156,6 @@ class NativeNotificationService {
             extra: { actionId: schedule.actionId },
             smallIcon: 'ic_stat_icon_config_sample',
             iconColor: '#488AFF',
-            // Configure for heads-up notification (popup)
-            ongoing: true,
-            autoCancel: false,
-            // High priority to ensure it appears as heads-up
-            priority: 5, // MAX priority
-            visibility: 1, // PUBLIC visibility
-            // Additional Android-specific settings for popup behavior
-            channelId: 'urgent-reminders',
           },
         ],
       });
