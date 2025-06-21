@@ -71,3 +71,9 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+## Notifications
+
+This project uses Capacitor's native notifications. The first time the app runs,
+it will request permission to display notifications. Granting this permission is
+required for reminders to appear on your device.

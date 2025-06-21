@@ -1,6 +1,7 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/components/ui/use-toast';
 
 export interface NotificationSchedule {
   id: number;
@@ -13,6 +14,7 @@ export interface NotificationSchedule {
 class NativeNotificationService {
   private isNative: boolean;
   private notificationCounter: number = 1;
+  private highPriorityChannelId = 'high-priority';
 
   constructor() {
     this.isNative = Capacitor.isNativePlatform();
@@ -29,10 +31,27 @@ class NativeNotificationService {
       
       if (permission.display === 'granted') {
         console.log('Native notification permissions granted');
-        
+
+        // Create a high priority channel on supported platforms
+        try {
+          await LocalNotifications.createChannel({
+            id: this.highPriorityChannelId,
+            name: 'High Priority',
+            description: 'High priority notifications',
+            importance: 5,
+            visibility: 1,
+          });
+        } catch (err) {
+          console.warn('Failed to create notification channel', err);
+        }
+
         // Set up notification listeners
         LocalNotifications.addListener('localNotificationReceived', (notification) => {
           console.log('Native notification received:', notification);
+          toast({
+            title: notification.title ?? 'Reminder',
+            description: notification.body,
+          });
         });
 
         LocalNotifications.addListener('localNotificationActionPerformed', async (notificationAction) => {
@@ -83,27 +102,31 @@ class NativeNotificationService {
 
     // Create context-aware title
     switch (actionType) {
-      case 'call':
+      case 'call': {
         const contactName = action.contact_info?.name || 'contact';
         title = `Call ${contactName} ${relativeTime}`;
         break;
-      case 'text':
+      }
+      case 'text': {
         const textContact = action.contact_info?.name || 'contact';
         title = `Text ${textContact} ${relativeTime}`;
         break;
-      case 'email':
+      }
+      case 'email': {
         const emailContact = action.contact_info?.name || 'contact';
         title = `Email ${emailContact} ${relativeTime}`;
         break;
-      case 'reminder':
+      }
+      case 'reminder': {
         title = `Reminder: ${taskTitle} ${relativeTime}`;
         break;
+      }
       default:
         title = `${taskTitle} ${relativeTime}`;
     }
 
     // Create detailed body
-    let bodyParts = [];
+    const bodyParts = [];
     
     if (action.tasks?.description) {
       bodyParts.push(action.tasks.description);
@@ -150,6 +173,7 @@ class NativeNotificationService {
             schedule: {
               at: schedule.scheduledAt,
             },
+            channelId: this.highPriorityChannelId,
             sound: 'default',
             attachments: [],
             actionTypeId: 'OPEN_APP',
