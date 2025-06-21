@@ -228,7 +228,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
   const saveTask = async (taskData: TranscriptionResult['extractedTasks'][0]) => {
     try {
-      console.log('Saving task:', taskData);
+      console.log('🔄 Saving task with data:', taskData);
       
       // First, create the task in the database
       const { data: task, error: taskError } = await supabase
@@ -246,20 +246,22 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
         .single();
 
       if (taskError) {
-        console.error('Error creating task:', taskError);
+        console.error('❌ Error creating task:', taskError);
         throw taskError;
       }
 
-      console.log('Task created successfully:', task);
+      console.log('✅ Task created successfully:', task);
 
       // For scheduled tasks, create both native notifications and database scheduling
       if (taskData.scheduledFor && task) {
         const scheduledDate = new Date(taskData.scheduledFor);
+        console.log(`📅 Scheduling notifications for: ${scheduledDate.toISOString()}`);
         
         // Schedule native notification for immediate device notification
         if (nativeNotificationService.isNativePlatform()) {
           const notificationId = nativeNotificationService.getNextNotificationId();
           
+          console.log(`📱 Scheduling native notification with ID: ${notificationId}`);
           const notificationScheduled = await nativeNotificationService.scheduleNotification({
             id: notificationId,
             title: `${taskData.actionType === 'reminder' ? '⏰' : '📱'} ${taskData.title}`,
@@ -269,12 +271,18 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           });
 
           if (notificationScheduled) {
-            console.log('Native notification scheduled for:', scheduledDate);
+            console.log('✅ Native notification scheduled successfully for:', scheduledDate);
+            toast({
+              title: "Notification Scheduled",
+              description: `Reminder set for ${scheduledDate.toLocaleString()}`,
+            });
+          } else {
+            console.error('❌ Failed to schedule native notification');
           }
         }
 
         // Also create scheduled action in database as backup
-        console.log('Creating scheduled action with task_id:', task.id);
+        console.log('📝 Creating scheduled action with task_id:', task.id);
         
         await new Promise(resolve => setTimeout(resolve, 100));
         
@@ -296,10 +304,12 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
           .single();
 
         if (scheduledError) {
-          console.error('Error creating scheduled action:', scheduledError);
+          console.error('❌ Error creating scheduled action:', scheduledError);
         } else {
-          console.log('Scheduled action created successfully:', scheduledAction);
+          console.log('✅ Scheduled action created successfully:', scheduledAction);
         }
+      } else if (!taskData.scheduledFor) {
+        console.log('ℹ️ No scheduledFor date - notification not scheduled');
       }
 
       // Create Task object for the UI with proper type conversion
@@ -321,7 +331,7 @@ export const VoiceCapture: React.FC<VoiceCaptureProps> = ({
 
       return newTask;
     } catch (error) {
-      console.error('Error saving task:', error);
+      console.error('❌ Error saving task:', error);
       toast({
         title: "Save Error",
         description: "Failed to save task. Please try again.",

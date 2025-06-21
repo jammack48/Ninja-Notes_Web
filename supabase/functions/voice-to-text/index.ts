@@ -60,31 +60,82 @@ function parseTimeExpression(timeText, baseTime = new Date()) {
   
   // Handle relative time expressions with "in"
   if (text.includes('in ')) {
-    // Match "in X minutes" or "in X mins"
-    const minutesMatch = text.match(/in (\d+) (?:minutes?|mins?)/);
+    // Match "in X minutes" or "in X mins" - including written numbers
+    const minutesMatch = text.match(/in (?:(\d+)|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty) (?:minutes?|mins?)/);
     if (minutesMatch) {
-      const minutes = parseInt(minutesMatch[1]);
-      const futureTime = new Date(now.getTime() + minutes * 60 * 1000);
-      console.log(`✅ Parsed "in ${minutes} minutes" to: ${futureTime.toISOString()}`);
-      return futureTime;
+      let minutes = 0;
+      if (minutesMatch[1]) {
+        minutes = parseInt(minutesMatch[1]);
+      } else {
+        // Convert written numbers to digits
+        const numberWords = {
+          'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+          'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+          'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
+          'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20
+        };
+        
+        const foundWord = Object.keys(numberWords).find(word => text.includes(word));
+        if (foundWord) {
+          minutes = numberWords[foundWord];
+        }
+      }
+      
+      if (minutes > 0) {
+        const futureTime = new Date(now.getTime() + minutes * 60 * 1000);
+        console.log(`✅ Parsed "in ${minutes} minutes" to: ${futureTime.toISOString()}`);
+        return futureTime;
+      }
     }
     
     // Match "in X hours" or "in X hrs"
-    const hoursMatch = text.match(/in (\d+) (?:hours?|hrs?)/);
+    const hoursMatch = text.match(/in (?:(\d+)|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (?:hours?|hrs?)/);
     if (hoursMatch) {
-      const hours = parseInt(hoursMatch[1]);
-      const futureTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
-      console.log(`✅ Parsed "in ${hours} hours" to: ${futureTime.toISOString()}`);
-      return futureTime;
+      let hours = 0;
+      if (hoursMatch[1]) {
+        hours = parseInt(hoursMatch[1]);
+      } else {
+        const numberWords = {
+          'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+          'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+          'eleven': 11, 'twelve': 12
+        };
+        
+        const foundWord = Object.keys(numberWords).find(word => text.includes(word));
+        if (foundWord) {
+          hours = numberWords[foundWord];
+        }
+      }
+      
+      if (hours > 0) {
+        const futureTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
+        console.log(`✅ Parsed "in ${hours} hours" to: ${futureTime.toISOString()}`);
+        return futureTime;
+      }
     }
     
     // Match "in X days"
-    const daysMatch = text.match(/in (\d+) days?/);
+    const daysMatch = text.match(/in (?:(\d+)|one|two|three|four|five|six|seven) days?/);
     if (daysMatch) {
-      const days = parseInt(daysMatch[1]);
-      const futureTime = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-      console.log(`✅ Parsed "in ${days} days" to: ${futureTime.toISOString()}`);
-      return futureTime;
+      let days = 0;
+      if (daysMatch[1]) {
+        days = parseInt(daysMatch[1]);
+      } else {
+        const numberWords = {
+          'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7
+        };
+        
+        const foundWord = Object.keys(numberWords).find(word => text.includes(word));
+        if (foundWord) {
+          days = numberWords[foundWord];
+        }
+      }
+      
+      if (days > 0) {
+        const futureTime = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+        console.log(`✅ Parsed "in ${days} days" to: ${futureTime.toISOString()}`);
+        return futureTime;
+      }
     }
   }
   
@@ -248,12 +299,17 @@ IMPORTANT: Do NOT set scheduledFor in your response. Leave it null. The system w
         
         // Process time expressions for each task using our improved parser
         if (parsedResult.extractedTasks && parsedResult.extractedTasks.length > 0) {
-          parsedResult.extractedTasks = parsedResult.extractedTasks.map(task => {
+          console.log(`🔍 Processing ${parsedResult.extractedTasks.length} tasks for time expressions`);
+          
+          parsedResult.extractedTasks = parsedResult.extractedTasks.map((task, index) => {
+            console.log(`📝 Processing task ${index + 1}: "${task.title}"`);
+            console.log(`🎯 Original transcription for parsing: "${rawTranscription}"`);
+            
             // Try to extract time from the original transcription
             const parsedTime = parseTimeExpression(rawTranscription);
             if (parsedTime) {
               task.scheduledFor = parsedTime.toISOString();
-              console.log(`✅ Set task scheduledFor to: ${task.scheduledFor}`);
+              console.log(`✅ Set task "${task.title}" scheduledFor to: ${task.scheduledFor}`);
             } else {
               task.scheduledFor = null;
               console.log(`ℹ️ No time expression found for task: ${task.title}`);
@@ -275,6 +331,7 @@ IMPORTANT: Do NOT set scheduledFor in your response. Leave it null. The system w
         // Fallback: try to extract basic info manually
         const text = rawTranscription.toLowerCase();
         if (text.includes('remind') || text.includes('call') || text.includes('text') || text.includes('email')) {
+          console.log('🔄 Attempting manual parsing as ChatGPT failed');
           const parsedTime = parseTimeExpression(text);
           let actionType = 'note';
           
@@ -291,6 +348,8 @@ IMPORTANT: Do NOT set scheduledFor in your response. Leave it null. The system w
             scheduledFor: parsedTime ? parsedTime.toISOString() : null,
             contactInfo: {}
           }];
+          
+          console.log('🔧 Manual parsing result:', analysisResult.extractedTasks[0]);
         }
       }
     } else {
@@ -326,6 +385,12 @@ IMPORTANT: Do NOT set scheduledFor in your response. Leave it null. The system w
     if (error) console.warn('⚠️ Supabase insert failed:', error);
 
     const timings = timer.getAllTimings();
+    console.log('🏁 Final result:', {
+      rawTranscription,
+      extractedTasks: analysisResult.extractedTasks,
+      timings
+    });
+    
     return new Response(JSON.stringify({
       rawTranscription,
       ...analysisResult,
