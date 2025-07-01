@@ -9,7 +9,7 @@ interface UsSecurePinOptions {
 
 export const useSecurePin = (options: UsSecurePinOptions = {}) => {
   const {
-    correctPin = process.env.REACT_APP_PIN || '2000', // Environment variable fallback
+    correctPin = import.meta.env.VITE_REACT_APP_PIN || '2000', // Environment variable fallback
     maxAttempts = APP_CONFIG.PIN_ATTEMPTS_LIMIT,
     lockoutDuration = APP_CONFIG.PIN_LOCKOUT_DURATION,
   } = options;
