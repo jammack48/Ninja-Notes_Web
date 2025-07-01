@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">whisper-to-task-flow</string>
-    <string name="title_activity_main">whisper-to-task-flow</string>
+    <string name="app_name">Ninja Notes</string>
+    <string name="title_activity_main">Ninja Notes</string>
     <string name="package_name">app.lovable.fe0a188b17834f1393b8515bcfc08b91</string>
     <string name="custom_url_scheme">app.lovable.fe0a188b17834f1393b8515bcfc08b91</string>
 </resources>

@@ -1,9 +1,8 @@
-
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'app.lovable.fe0a188b17834f1393b8515bcfc08b91',
-  appName: 'whisper-to-task-flow',
+  appName: 'Ninja Notes',
   webDir: 'dist',
   plugins: {
     LocalNotifications: {
