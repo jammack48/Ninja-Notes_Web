@@ -1,89 +1,266 @@
 .corkboard-bg {
   min-height: 100vh;
-  background: url('https://www.transparenttextures.com/patterns/cork-board.png'), #e0cda7;
-  background-size: 300px 300px;
+  background: 
+    radial-gradient(circle at 20% 30%, rgba(139, 69, 19, 0.1) 1px, transparent 1px),
+    radial-gradient(circle at 80% 70%, rgba(139, 69, 19, 0.1) 1px, transparent 1px),
+    radial-gradient(circle at 40% 80%, rgba(139, 69, 19, 0.1) 1px, transparent 1px),
+    radial-gradient(circle at 60% 20%, rgba(139, 69, 19, 0.1) 1px, transparent 1px),
+    linear-gradient(45deg, #d4a574 25%, transparent 25%),
+    linear-gradient(-45deg, #d4a574 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d4a574 75%),
+    linear-gradient(-45deg, transparent 75%, #d4a574 75%),
+    #e0c896;
+  background-size: 
+    200px 200px,
+    180px 180px,
+    220px 220px,
+    160px 160px,
+    20px 20px,
+    20px 20px,
+    20px 20px,
+    20px 20px,
+    100px 100px;
+  background-position:
+    0 0,
+    50px 50px,
+    100px 100px,
+    150px 150px,
+    0 0,
+    0 0,
+    10px 10px,
+    10px 10px,
+    0 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 0;
+  padding: 40px 20px;
+  position: relative;
+}
+
+.corkboard-bg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(139, 69, 19, 0.05) 2px,
+      rgba(139, 69, 19, 0.05) 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(139, 69, 19, 0.05) 2px,
+      rgba(139, 69, 19, 0.05) 4px
+    );
+  pointer-events: none;
 }
 
 .corkboard-title {
   font-family: 'Permanent Marker', cursive, sans-serif;
-  color: #7c5e2a;
-  font-size: 2.5rem;
-  margin-bottom: 32px;
-  letter-spacing: 2px;
-  text-shadow: 1px 2px 0 #fff8e1, 0 2px 8px #bfa76a44;
+  color: #8b4513;
+  font-size: 3rem;
+  margin-bottom: 40px;
+  letter-spacing: 3px;
+  text-shadow: 
+    2px 2px 0 #fff8e1, 
+    4px 4px 8px rgba(139, 69, 19, 0.3),
+    0 0 20px rgba(255, 248, 225, 0.5);
+  transform: rotate(-1deg);
+  position: relative;
+  z-index: 10;
 }
 
 .corkboard-note {
   position: relative;
-  min-width: 140px;
-  min-height: 120px;
-  max-width: 220px;
+  min-width: 160px;
+  min-height: 140px;
+  max-width: 240px;
   padding: 0;
-  border-radius: 10px 10px 18px 18px;
-  box-shadow: 0 6px 24px 0 #0003, 0 1.5px 0 #bfa76a;
-  font-family: 'Segoe UI', 'Arial', sans-serif;
-  font-size: 1.1rem;
-  color: #3b2f13;
+  border-radius: 2px;
+  box-shadow: 
+    0 4px 8px rgba(0, 0, 0, 0.15),
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  font-family: 'Comic Sans MS', 'Marker Felt', cursive, sans-serif;
+  font-size: 1rem;
+  color: #2c1810;
   margin: 0 auto;
-  transition: box-shadow 0.2s, transform 0.2s;
+  transition: 
+    box-shadow 0.2s ease,
+    transform 0.2s ease,
+    z-index 0s;
   z-index: 1;
   user-select: none;
   cursor: grab;
   transform: rotate(-2deg);
-  border: 1.5px solid #e6d97a;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, #fff475 0%, #fff89e 100%);
 }
-.corkboard-note:active {
-  box-shadow: 0 12px 32px 0 #0004, 0 2px 0 #bfa76a;
-  transform: scale(1.03) rotate(-1deg);
+
+.corkboard-note:nth-child(2n) {
+  transform: rotate(1deg);
+  background: linear-gradient(135deg, #ffd6a5 0%, #ffe4c4 100%);
+}
+
+.corkboard-note:nth-child(3n) {
+  transform: rotate(-1deg);
+  background: linear-gradient(135deg, #baffc9 0%, #d4ffdb 100%);
+}
+
+.corkboard-note:nth-child(4n) {
+  transform: rotate(2deg);
+  background: linear-gradient(135deg, #ffb3ba 0%, #ffc9d1 100%);
+}
+
+.corkboard-note:nth-child(5n) {
+  transform: rotate(-3deg);
+  background: linear-gradient(135deg, #bae1ff 0%, #d1ecff 100%);
+}
+
+.corkboard-note:hover {
+  box-shadow: 
+    0 8px 16px rgba(0, 0, 0, 0.2),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transform: scale(1.02) rotate(0deg) !important;
+  z-index: 1000;
+}
+
+.corkboard-note:active,
+.corkboard-note.dragging {
+  cursor: grabbing;
+  box-shadow: 
+    0 12px 24px rgba(0, 0, 0, 0.25),
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transform: scale(1.05) rotate(0deg) !important;
+  z-index: 2000 !important;
 }
 
 .corkboard-pin {
   position: absolute;
-  top: 8px;
+  top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  width: 18px;
-  height: 18px;
-  background: radial-gradient(circle at 60% 40%, #e74c3c 70%, #b71c1c 100%);
+  width: 16px;
+  height: 16px;
+  background: 
+    radial-gradient(circle at 30% 30%, #ff6b6b 0%, #e74c3c 70%, #c0392b 100%);
   border-radius: 50%;
-  box-shadow: 0 2px 6px #0005;
-  border: 2px solid #fff8e1;
-  z-index: 2;
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  border: 1px solid #c0392b;
+  z-index: 3;
   cursor: grab;
 }
+
+.corkboard-pin::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+}
+
 .corkboard-pin:active {
   cursor: grabbing;
 }
 
 .corkboard-note-text {
-  margin-top: 28px;
-  padding: 18px 14px 22px 14px;
-  border-radius: 10px 10px 18px 18px;
-  box-shadow: 0 2px 8px #0001 inset;
-  min-height: 80px;
+  margin-top: 32px;
+  padding: 16px 14px 20px 14px;
+  border-radius: 2px;
+  min-height: 90px;
   position: relative;
   z-index: 1;
   white-space: pre-line;
   word-break: break-word;
+  line-height: 1.4;
+  font-weight: 500;
+  background: 
+    repeating-linear-gradient(
+      transparent,
+      transparent 19px,
+      rgba(0, 0, 0, 0.05) 19px,
+      rgba(0, 0, 0, 0.05) 20px
+    );
 }
 
-/* Remove curl effect */
-.corkboard-curl {
-  display: none;
+.corkboard-note-text::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 0, 0, 0.2);
 }
 
+/* Grid layout improvements */
 .layout {
   width: 100% !important;
   min-width: 0;
+  max-width: 1200px;
 }
 
+.react-grid-item {
+  transition: none !important;
+}
+
+.react-grid-item.react-grid-placeholder {
+  display: none !important;
+}
+
+.react-grid-item.dragging {
+  z-index: 2000 !important;
+}
+
+/* Responsive design */
 @media (max-width: 950px) {
   .layout {
     width: 100% !important;
     min-width: 0;
   }
-} 
+  
+  .corkboard-title {
+    font-size: 2.5rem;
+    margin-bottom: 30px;
+  }
+  
+  .corkboard-note {
+    min-width: 140px;
+    min-height: 120px;
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 600px) {
+  .corkboard-title {
+    font-size: 2rem;
+    margin-bottom: 20px;
+  }
+  
+  .corkboard-note {
+    min-width: 120px;
+    min-height: 100px;
+    max-width: 180px;
+  }
+  
+  .corkboard-note-text {
+    padding: 12px 10px 16px 10px;
+    font-size: 0.9rem;
+  }
+}
