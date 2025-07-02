@@ -94,8 +94,7 @@
   margin: 0 auto;
   transition: 
     box-shadow 0.2s ease,
-    transform 0.2s ease,
-    z-index 0s;
+    transform 0.2s ease;
   z-index: 1;
   user-select: none;
   cursor: grab;
@@ -130,7 +129,7 @@
     0 2px 6px rgba(0, 0, 0, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
   transform: scale(1.02) rotate(0deg) !important;
-  z-index: 1000;
+  z-index: 100;
 }
 
 .corkboard-note:active,
@@ -141,7 +140,7 @@
     0 4px 12px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transform: scale(1.05) rotate(0deg) !important;
-  z-index: 2000 !important;
+  z-index: 9999 !important;
 }
 
 .corkboard-pin {
@@ -214,18 +213,43 @@
   width: 100% !important;
   min-width: 0;
   max-width: 1200px;
+  position: relative;
 }
 
+/* Critical fixes for dragging */
 .react-grid-item {
   transition: none !important;
+  position: absolute !important;
 }
 
 .react-grid-item.react-grid-placeholder {
   display: none !important;
 }
 
-.react-grid-item.dragging {
-  z-index: 2000 !important;
+/* This is the key fix - ensure dragged items are on top */
+.react-grid-item.react-draggable-dragging {
+  z-index: 9999 !important;
+  transition: none !important;
+}
+
+.react-grid-item.react-draggable-dragging .corkboard-note {
+  z-index: 9999 !important;
+  cursor: grabbing !important;
+  box-shadow: 
+    0 12px 24px rgba(0, 0, 0, 0.25),
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+  transform: scale(1.05) rotate(0deg) !important;
+}
+
+/* Fix for drag handle positioning */
+.react-draggable {
+  position: relative !important;
+}
+
+/* Ensure proper cursor positioning during drag */
+.react-grid-item.react-draggable-dragging {
+  pointer-events: auto !important;
 }
 
 /* Responsive design */

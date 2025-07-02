@@ -149,6 +149,8 @@ const Index = () => {
         onLayoutChange={onLayoutChange}
         useCSSTransforms={true}
         transformScale={1}
+        draggableHandle=".corkboard-note"
+        draggableCancel=".corkboard-pin"
       >
         {notesData.map(note => (
           <div key={note.key}>
