@@ -147,7 +147,7 @@ const Index = () => {
         onDrag={onDrag}
         onDragStop={onDragStop}
         onLayoutChange={onLayoutChange}
-        useCSSTransforms={true}
+        useCSSTransforms={false}
         transformScale={1}
         draggableHandle=".corkboard-note"
         draggableCancel=".corkboard-pin"
