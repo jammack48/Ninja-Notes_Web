@@ -1,237 +1,64 @@
-import React, { useState, useEffect } from 'react';
-import { VoiceCapture } from '@/components/VoiceCapture';
-import { TaskList } from '@/components/TaskList';
-import { ActionManager } from '@/components/ActionManager';
-import { LockScreen } from '@/components/LockScreen';
-import { Task } from '@/types/Task';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mic, List, Calendar } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import React, { useMemo } from 'react';
+import GridLayout, { WidthProvider } from 'react-grid-layout';
+import '../Corkboard.css';
+
+const ResponsiveGridLayout = WidthProvider(GridLayout);
+
+const NOTE_WIDTH = 2;
+const NOTE_HEIGHT = 2;
+const COLS = 6;
+const ROWS = 4;
+
+const notesData = [
+  { key: '1', text: 'Call Nigel', color: '#fff475' },
+  { key: '2', text: 'Send invoice', color: '#ffd6a5' },
+  { key: '3', text: 'Check job sheet', color: '#baffc9' },
+];
+
+function getRandomNonOverlappingPositions(count, cols, rows, w, h) {
+  const positions = [];
+  const taken = new Set();
+  let attempts = 0;
+  while (positions.length < count && attempts < 100) {
+    const x = Math.floor(Math.random() * (cols - w + 1));
+    const y = Math.floor(Math.random() * (rows - h + 1));
+    const key = `${x},${y}`;
+    if (!taken.has(key)) {
+      taken.add(key);
+      positions.push({ x, y });
+    }
+    attempts++;
+  }
+  return positions;
+}
+
+const CorkboardNote = ({ text, color }: { text: string; color: string }) => (
+  <div className="corkboard-note" style={{ background: color }}>
+    <div className="corkboard-pin" />
+    <div className="corkboard-note-text">{text}</div>
+  </div>
+);
 
 const Index = () => {
-  // Initialize lock screen to show first on published sites
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState<'mic' | 'tasks' | 'actions'>('mic');
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [activeTaskCount, setActiveTaskCount] = useState(0);
-  const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
-  const [touchEnd, setTouchEnd] = useState<{ x: number; y: number } | null>(null);
-
-  const minSwipeDistance = 50;
-
-  // Fetch active task count from database
-  const fetchActiveTaskCount = async () => {
-    try {
-      const { count, error } = await supabase
-        .from('tasks')
-        .select('*', { count: 'exact', head: true })
-        .eq('completed', false);
-
-      if (error) {
-        console.error('Error fetching task count:', error);
-        return;
-      }
-
-      setActiveTaskCount(count || 0);
-    } catch (error) {
-      console.error('Error fetching active task count:', error);
-    }
-  };
-
-  // Set up real-time subscription for task count updates
-  useEffect(() => {
-    fetchActiveTaskCount();
-
-    // Subscribe to real-time changes for active task count
-    const channel = supabase
-      .channel('task-count-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tasks'
-        },
-        () => {
-          console.log('Task count update received');
-          fetchActiveTaskCount(); // Refetch count when tasks change
-        }
-      )
-      .subscribe();
-
-    return () => {
-      console.log('Cleaning up task count subscription');
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const addTask = (task: Task) => {
-    console.log('Adding new task:', task);
-    setTasks(prev => [task, ...prev]);
-    // Count will be updated via real-time subscription
-  };
-
-  const toggleTask = (id: string) => {
-    console.log('Toggling task:', id);
-    setTasks(prev => prev.map(task => 
-      task.id === id ? { ...task, completed: !task.completed } : task
-    ));
-  };
-
-  const deleteTask = (id: string) => {
-    console.log('Deleting task:', id);
-    setTasks(prev => prev.filter(task => task.id !== id));
-  };
-
-  const handleUnlock = () => {
-    console.log('Unlocking app');
-    setIsUnlocked(true);
-  };
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    setTouchEnd(null);
-    setTouchStart({
-      x: e.targetTouches[0].clientX,
-      y: e.targetTouches[0].clientY,
-    });
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => {
-    setTouchEnd({
-      x: e.targetTouches[0].clientX,
-      y: e.targetTouches[0].clientY,
-    });
-  };
-
-  const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
-
-    const distanceX = touchStart.x - touchEnd.x;
-    const distanceY = touchStart.y - touchEnd.y;
-    const isLeftSwipe = distanceX > minSwipeDistance;
-    const isRightSwipe = distanceX < -minSwipeDistance;
-    const isVerticalSwipe = Math.abs(distanceY) > Math.abs(distanceX);
-
-    console.log('Swipe detected:', { distanceX, distanceY, isLeftSwipe, isRightSwipe, isVerticalSwipe });
-
-    // Only handle horizontal swipes - cycle through all three screens
-    if (!isVerticalSwipe) {
-      if (isLeftSwipe) {
-        console.log('Swiping left');
-        setCurrentScreen(prev => {
-          switch (prev) {
-            case 'mic': return 'tasks';
-            case 'tasks': return 'actions';
-            case 'actions': return 'mic';
-            default: return 'mic';
-          }
-        });
-      }
-      if (isRightSwipe) {
-        console.log('Swiping right');
-        setCurrentScreen(prev => {
-          switch (prev) {
-            case 'mic': return 'actions';
-            case 'tasks': return 'mic';
-            case 'actions': return 'tasks';
-            default: return 'mic';
-          }
-        });
-      }
-    }
-  };
-
-  // Show lock screen if not unlocked
-  if (!isUnlocked) {
-    console.log('Showing lock screen');
-    return <LockScreen onUnlock={handleUnlock} />;
-  }
-
-  console.log('App unlocked, showing main interface');
+  const positions = useMemo(() => getRandomNonOverlappingPositions(notesData.length, COLS, ROWS, NOTE_WIDTH, NOTE_HEIGHT), []);
+  const notes = notesData.map((note, i) => ({ ...note, ...positions[i], w: NOTE_WIDTH, h: NOTE_HEIGHT }));
 
   return (
-    <div 
-      className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 overflow-hidden relative"
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-    >
-      {/* Futuristic background elements */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan-900/20 via-transparent to-transparent"></div>
-      <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%239C92AC%22%20fill-opacity%3D%220.05%22%3E%3Ccircle%20cx%3D%2230%22%20cy%3D%2230%22%20r%3D%221%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')]"></div>
-      
-      {/* Vertical tab indicators on the edges - updated for 3 tabs */}
-      <div className="absolute left-0 top-1/2 -translate-y-1/2 z-20 md:hidden">
-        <div className="bg-slate-800/60 backdrop-blur-sm border border-cyan-500/30 rounded-r-lg px-2 py-8 flex flex-col items-center gap-2">
-          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'actions' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
-          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'tasks' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
-          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'mic' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
-        </div>
-      </div>
-      
-      <div className="absolute right-0 top-1/2 -translate-y-1/2 z-20 md:hidden">
-        <div className="bg-slate-800/60 backdrop-blur-sm border border-cyan-500/30 rounded-l-lg px-2 py-8 flex flex-col items-center gap-2">
-          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'actions' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
-          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'tasks' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
-          <div className={`w-1 h-6 rounded-full transition-all duration-300 ${currentScreen === 'mic' ? 'bg-cyan-400' : 'bg-slate-600/50'}`}></div>
-        </div>
-      </div>
-      
-      {/* Updated Tab Interface for 3 tabs */}
-      <Tabs value={currentScreen} onValueChange={(value) => setCurrentScreen(value as 'mic' | 'tasks' | 'actions')} className="h-screen">
-        <div className="bg-slate-800/50 backdrop-blur-xl border-b border-cyan-500/30 p-4 relative z-50">
-          <TabsList className="grid w-full max-w-lg mx-auto grid-cols-3 bg-slate-800/70 border border-cyan-500/40 shadow-lg">
-            <TabsTrigger 
-              value="mic" 
-              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-1 font-medium transition-all duration-200 text-xs"
-            >
-              <Mic className="w-3 h-3" />
-              Voice
-            </TabsTrigger>
-            <TabsTrigger 
-              value="tasks" 
-              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-1 font-medium transition-all duration-200 text-xs"
-            >
-              <List className="w-3 h-3" />
-              Tasks ({activeTaskCount})
-            </TabsTrigger>
-            <TabsTrigger 
-              value="actions" 
-              className="data-[state=active]:bg-cyan-500/30 data-[state=active]:text-cyan-100 data-[state=active]:shadow-md text-slate-300 flex items-center gap-1 font-medium transition-all duration-200 text-xs"
-            >
-              <Calendar className="w-3 h-3" />
-              Schedule
-            </TabsTrigger>
-          </TabsList>
-          
-          {/* Task Whisper title below navigation */}
-          <div className="text-center mt-4">
-            <h1 className="text-2xl font-bold text-white tracking-tight">Task Whisper</h1>
-            <div className="w-16 h-0.5 bg-gradient-to-r from-cyan-400 to-purple-400 mx-auto mt-2"></div>
+    <div className="corkboard-bg">
+      <h1 className="corkboard-title">Ninja Notes Corkboard</h1>
+      <ResponsiveGridLayout
+        className="layout"
+        cols={COLS}
+        rowHeight={90}
+        isResizable={false}
+        margin={[24, 24]}
+      >
+        {notes.map(note => (
+          <div key={note.key} data-grid={{ x: note.x, y: note.y, w: note.w, h: note.h }}>
+            <CorkboardNote text={note.text} color={note.color} />
           </div>
-        </div>
-        
-        <TabsContent value="mic" className="h-[calc(100vh-140px)] m-0">
-          <VoiceCapture 
-            onTaskCreated={addTask}
-            onSwitchToTasks={() => setCurrentScreen('tasks')}
-            taskCount={activeTaskCount}
-          />
-        </TabsContent>
-        
-        <TabsContent value="tasks" className="h-[calc(100vh-140px)] m-0">
-          <TaskList 
-            tasks={tasks}
-            onToggleTask={toggleTask}
-            onDeleteTask={deleteTask}
-            onSwitchToMic={() => setCurrentScreen('mic')}
-          />
-        </TabsContent>
-        
-        <TabsContent value="actions" className="h-[calc(100vh-140px)] m-0 p-4">
-          <ActionManager />
-        </TabsContent>
-      </Tabs>
+        ))}
+      </ResponsiveGridLayout>
     </div>
   );
 };
