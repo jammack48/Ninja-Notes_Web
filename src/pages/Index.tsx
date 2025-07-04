@@ -30,6 +30,7 @@ const Index = () => {
   const [originalPositions, setOriginalPositions] = useState({});
   const zCounter = useRef(10);
   const boardRef = useRef(null);
+  const [isOverTrash, setIsOverTrash] = useState(false);
 
   // Helper to check overlap
   const isOverlapping = (a, b) => {
@@ -139,11 +140,22 @@ const Index = () => {
         note.key === key ? { ...note, x: data.x, y: data.y } : note
       )
     );
+    // Check if over trash
+    setIsOverTrash(isOverTrashBasket(data.x, data.y));
   };
 
   // Handle drag stop: check for overlap, revert if needed, update Supabase
   const handleStop = (e, data, key) => {
     setDraggedKey(null);
+    if (isOverTrashBasket(data.x, data.y)) {
+      // Delete from Supabase and remove from UI asynchronously
+      (async () => {
+        await supabase.from('tasks').delete().eq('id', key);
+        setNotes(prevNotes => prevNotes.filter(note => note.key !== key));
+        setIsOverTrash(false);
+      })();
+      return;
+    }
     const thisNote = notes.find(n => n.key === key);
     const movedNote = { ...thisNote, x: data.x, y: data.y };
     const overlap = notes.some(n => n.key !== key && isOverlapping(movedNote, n));
@@ -159,7 +171,7 @@ const Index = () => {
           note.key === key ? { ...note, x: data.x, y: data.y } : note
         )
       );
-      // Update position in Supabase
+      // Update position in Supabase asynchronously
       if (thisNote && thisNote.supabase_id) {
         updateNotePositionInSupabase(thisNote.supabase_id, data.x, data.y);
       }
@@ -169,6 +181,7 @@ const Index = () => {
       delete copy[key];
       return copy;
     });
+    setIsOverTrash(false);
   };
 
   // Async function to update note position in Supabase
@@ -256,6 +269,25 @@ const Index = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Helper: check if note is over trash basket
+  function isOverTrashBasket(x, y) {
+    const trash = document.getElementById('trash-basket');
+    if (!trash) return false;
+    const rect = trash.getBoundingClientRect();
+    // Adjust for board offset
+    const board = boardRef.current;
+    if (!board) return false;
+    const boardRect = board.getBoundingClientRect();
+    const absX = x + boardRect.left;
+    const absY = y + boardRect.top + 40; // 40: pin offset
+    return (
+      absX + NOTE_WIDTH / 2 > rect.left &&
+      absX + NOTE_WIDTH / 2 < rect.right &&
+      absY > rect.top &&
+      absY < rect.bottom
+    );
+  }
+
   return (
     <div ref={boardRef} className="corkboard-bg" style={{ width: '100%', height: '100vh', position: 'relative', overflow: 'hidden' }}>
       <h1 className="corkboard-title">Ninja Notes Corkboard</h1>
@@ -304,6 +336,31 @@ const Index = () => {
           </div>
         </Draggable>
       ))}
+      {/* Trash basket drop target */}
+      <div
+        id="trash-basket"
+        className={`trash-basket${isOverTrash ? ' trash-hover' : ''}`}
+        style={{
+          position: 'absolute',
+          right: 40,
+          bottom: 40,
+          width: 80,
+          height: 80,
+          background: isOverTrash ? '#e74c3c' : '#bfa76a',
+          borderRadius: 16,
+          boxShadow: '0 4px 16px #0003',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+          fontSize: 36,
+          color: '#fff',
+          transition: 'background 0.2s',
+          opacity: 0.85,
+        }}
+      >
+        🗑️
+      </div>
     </div>
   );
 };

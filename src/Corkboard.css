@@ -216,3 +216,12 @@
     height: 400px !important;
   }
 }
+
+.trash-basket {
+  transition: background 0.2s;
+  opacity: 0.85;
+}
+.trash-basket.trash-hover {
+  background: #e74c3c !important;
+  opacity: 1;
+}
